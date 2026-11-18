@@ -1,0 +1,2715 @@
+{
+ "Alcor": {
+  "conditionals": [],
+  "lines": [
+   334,
+   395
+  ],
+  "settings": {
+   "angsep": 1.5,
+   "auto_positions": 0,
+   "bin": 8,
+   "chop_direction": "DIAGONAL",
+   "corr_thresh_1": 0.7,
+   "corr_thresh_2": 0.7,
+   "dec": 5.22499,
+   "do_align": 0,
+   "do_center": 0,
+   "do_chop_sub": 0,
+   "do_combine": 0,
+   "do_pre_binning": 0,
+   "do_pre_clean": 0,
+   "do_split": 0,
+   "fix_pa": 0,
+   "k_klip": 2,
+   "obj": "alcor",
+   "pos1": [
+    563,
+    640
+   ],
+   "pos2": [
+    827,
+    767
+   ],
+   "pre_coronoise_clean": 0,
+   "pre_corr_thresh_1": 0.25,
+   "pre_corr_thresh_2": 0.25,
+   "pre_noise_thresh_1": 5,
+   "pre_noise_thresh_2": 5,
+   "pre_peak_thresh_1": 0.5,
+   "pre_peak_thresh_2": 0.5,
+   "ra": 7.65503,
+   "radfilt": 0,
+   "radius": 400,
+   "reorder": 1,
+   "smooth_bg": 10,
+   "start_frame_left": 0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Alcor_2": {
+  "conditionals": [],
+  "lines": [
+   398,
+   457
+  ],
+  "settings": {
+   "angsep": 1.5,
+   "auto_positions": 0,
+   "bin": 6,
+   "chop_direction": "UP-DOWN",
+   "corr_thresh_1": 0.15,
+   "corr_thresh_2": 0.15,
+   "dec": 5.22499,
+   "filter_auto_pos": 1,
+   "fix_pa": 0,
+   "k_klip": 2,
+   "noise_thresh_1": 5,
+   "noise_thresh_2": 5,
+   "obj": "Alcor",
+   "peak_thresh_1": 0.5,
+   "peak_thresh_2": 0.5,
+   "pos1": [
+    563,
+    763
+   ],
+   "pos2": [
+    573,
+    633
+   ],
+   "pre_corr_thresh_1": 0.15,
+   "pre_corr_thresh_2": 0.15,
+   "pre_noise_thresh_1": 5,
+   "pre_noise_thresh_2": 5,
+   "pre_peak_thresh_1": 0.5,
+   "pre_peak_thresh_2": 0.5,
+   "ra": 7.65503,
+   "radfilt": 0,
+   "radius": 400,
+   "reorder": 0,
+   "smooth_bg": 10,
+   "start_frame_left": 0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Alphecca": {
+  "conditionals": [],
+  "lines": [
+   461,
+   505
+  ],
+  "settings": {
+   "background_limit": 30000.0,
+   "badw": 2,
+   "chop_direction": "LEFT-RIGHT",
+   "corr_thresh_1": 0.5,
+   "corr_thresh_2": 0.5,
+   "double_sided": 1,
+   "filter_auto_pos": 1,
+   "nan_edges": 1,
+   "noise_thresh_1": 2.0,
+   "noise_thresh_2": 2.0,
+   "obj": "Alphecca",
+   "peak_thresh_1": 0.5,
+   "peak_thresh_2": 0.5,
+   "pre_corr_thresh_1": 0.5,
+   "pre_corr_thresh_2": 0.5,
+   "pre_noise_thresh_1": 2.0,
+   "pre_noise_thresh_2": 2.0,
+   "pre_peak_thresh_1": 0.5,
+   "pre_peak_thresh_2": 0.5,
+   "radius": 400,
+   "reorder": 1,
+   "side": "right",
+   "start_frame_left": 0,
+   "start_frame_right": 0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Alphecca_2": {
+  "conditionals": [],
+  "lines": [
+   509,
+   559
+  ],
+  "settings": {
+   "background_limit": 30000.0,
+   "badw": 2,
+   "bin": 4,
+   "chop_direction": "DIAGONAL",
+   "corr_thresh_1": 0.95,
+   "corr_thresh_2": 0.95,
+   "double_sided": 0,
+   "filter_auto_pos": 1,
+   "nan_edges": 1,
+   "noise_thresh_1": 1.25,
+   "noise_thresh_2": 1.25,
+   "obj": "Alphecca",
+   "peak_thresh_1": 0.95,
+   "peak_thresh_2": 0.95,
+   "pre_corr_thresh_1": 0.5,
+   "pre_corr_thresh_2": 0.5,
+   "pre_noise_thresh_1": 2.0,
+   "pre_noise_thresh_2": 2.0,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "radius": 400,
+   "reorder": 0,
+   "side": "left",
+   "start_frame_left": 0,
+   "start_frame_right": 0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Alphecca_3": {
+  "conditionals": [],
+  "lines": [
+   563,
+   623
+  ],
+  "settings": {
+   "background_limit": 30000.0,
+   "badw": 2,
+   "bin": 8,
+   "chop_direction": "UP-DOWN",
+   "corr_thresh_1": 0.95,
+   "corr_thresh_2": 0.95,
+   "do_align": 0,
+   "do_center": 0,
+   "do_chop_sub": 0,
+   "do_combine": 0,
+   "do_split": 0,
+   "double_sided": 0,
+   "filter_auto_pos": 1,
+   "nan_edges": 1,
+   "noise_thresh_1": 1.25,
+   "noise_thresh_2": 1.25,
+   "obj": "alphecca",
+   "peak_thresh_1": 0.95,
+   "peak_thresh_2": 0.95,
+   "pre_corr_thresh_1": 0.5,
+   "pre_corr_thresh_2": 0.5,
+   "pre_noise_thresh_1": 2.0,
+   "pre_noise_thresh_2": 2.0,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "radius": 400,
+   "reorder": 0,
+   "side": "left",
+   "start_frame_left": 0,
+   "start_frame_right": 0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Alphecca_4": {
+  "conditionals": [],
+  "lines": [
+   626,
+   681
+  ],
+  "settings": {
+   "background_limit": 30000.0,
+   "badw": 2,
+   "bin": 8,
+   "chop_direction": "UP-DOWN",
+   "corr_thresh_1": 0.95,
+   "corr_thresh_2": 0.95,
+   "do_align": 0,
+   "do_center": 0,
+   "do_chop_sub": 0,
+   "do_combine": 0,
+   "do_split": 0,
+   "double_sided": 0,
+   "filter_auto_pos": 1,
+   "nan_edges": 1,
+   "noise_thresh_1": 1.25,
+   "noise_thresh_2": 1.25,
+   "obj": "Alphecca",
+   "peak_thresh_1": 0.95,
+   "peak_thresh_2": 0.95,
+   "pre_corr_thresh_1": 0.25,
+   "pre_corr_thresh_2": 0.25,
+   "pre_noise_thresh_1": 5.0,
+   "pre_noise_thresh_2": 5.0,
+   "pre_peak_thresh_1": 0.0,
+   "pre_peak_thresh_2": 0.0,
+   "radius": 400,
+   "reorder": 0,
+   "side": "left",
+   "start_frame_left": 0,
+   "start_frame_right": 0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Altair": {
+  "conditionals": [],
+  "lines": [
+   683,
+   727
+  ],
+  "settings": {
+   "badw": 2,
+   "bin": 4,
+   "chop_direction": "LEFT-RIGHT",
+   "double_sided": 1,
+   "nan_edges": 1,
+   "obj": "Altair",
+   "pre_coronoise_clean": 1,
+   "pre_coronoise_thresh_1": 1.25,
+   "pre_coronoise_thresh_2": 1.25,
+   "pre_corr_thresh_1": 0.97,
+   "pre_corr_thresh_2": 0.97,
+   "pre_noise_clean": 1,
+   "pre_noise_thresh_1": 1.25,
+   "pre_noise_thresh_2": 1.25,
+   "pre_peak_clean": 1,
+   "pre_peak_scale": 1,
+   "pre_peak_thresh_1": 0.9,
+   "pre_peak_thresh_2": 0.9,
+   "radius": 400,
+   "reorder": 0,
+   "root_dir": "/Volumes/RAID36TB/NOMIC/Altair/",
+   "side": "both",
+   "start_frame_left": 1000,
+   "start_frame_right": 1000,
+   "verify_total_pre_clean": 1
+  },
+  "unevaluated": {}
+ },
+ "BetaLeo": {
+  "conditionals": [],
+  "lines": [
+   728,
+   759
+  ],
+  "settings": {
+   "background_limit": 24000,
+   "bin": 4,
+   "chop_direction": "UP-DOWN",
+   "obj": "beta Leo ",
+   "pre_corr_thresh_1": 0.5,
+   "pre_corr_thresh_2": 0.5,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "prebin": 200,
+   "start_frame_left": 1900
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "BetaLeo_2": {
+  "conditionals": [],
+  "lines": [
+   760,
+   786
+  ],
+  "settings": {
+   "background_limit": 24000,
+   "bin": 4,
+   "chop_direction": "UP-DOWN",
+   "obj": "beta leo ",
+   "pre_corr_thresh_1": 0.5,
+   "pre_corr_thresh_2": 0.5,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "start_frame_left": 1900
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "BetaLeo_3": {
+  "conditionals": [],
+  "lines": [
+   787,
+   806
+  ],
+  "settings": {
+   "background_limit": 24000,
+   "bin": 4,
+   "chop_direction": "UP-DOWN",
+   "obj": "bet leo ",
+   "pre_corr_thresh_1": 0.5,
+   "pre_corr_thresh_2": 0.5,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "BetaLeo_4": {
+  "conditionals": [],
+  "lines": [
+   807,
+   848
+  ],
+  "settings": {
+   "background_limit": 24000,
+   "bin": 4,
+   "chop_direction": "UP-DOWN",
+   "corr_thresh_1": 0.93,
+   "corr_thresh_2": 0.93,
+   "do_align": 0,
+   "do_center": 0,
+   "do_chop_sub": 0,
+   "do_combine": 0,
+   "do_pre_binning": 0,
+   "do_pre_clean": 0,
+   "do_replace": 0,
+   "do_split": 0,
+   "framew": 1500,
+   "noise_thresh_1": 1.25,
+   "noise_thresh_2": 1.25,
+   "obj": "beta Leo ",
+   "peak_thresh_1": 0.9,
+   "peak_thresh_2": 0.9,
+   "pre_corr_thresh_1": 0.5,
+   "pre_corr_thresh_2": 0.5,
+   "pre_noise_thresh_1": 2,
+   "pre_noise_thresh_2": 2,
+   "pre_peak_thresh_1": 0.5,
+   "pre_peak_thresh_2": 0.5
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "BetaLeo_5": {
+  "conditionals": [],
+  "lines": [
+   849,
+   883
+  ],
+  "settings": {
+   "background_limit": 24000,
+   "bin": 4,
+   "block_stripe": 0,
+   "chop_direction": "DIAGONAL",
+   "corr_thresh_1": 0.95,
+   "corr_thresh_2": 0.95,
+   "framew": 1500,
+   "noise_thresh_1": 1.05,
+   "noise_thresh_2": 1.05,
+   "obj": "beta Leo ",
+   "peak_thresh_1": 0.9,
+   "peak_thresh_2": 0.9,
+   "pre_corr_thresh_1": 0.5,
+   "pre_corr_thresh_2": 0.5,
+   "pre_noise_thresh_1": 2,
+   "pre_noise_thresh_2": 2,
+   "pre_peak_thresh_1": 0.5,
+   "pre_peak_thresh_2": 0.5,
+   "skip_target_check": 1,
+   "start_frame_left": 1000,
+   "start_frame_right": 1000
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "BetaLeo_6": {
+  "conditionals": [],
+  "lines": [
+   884,
+   956
+  ],
+  "settings": {
+   "align_radius_thresh": 70,
+   "auto_positions": 1,
+   "background_limit": 24000,
+   "bin": 4,
+   "block_extra": 1,
+   "block_stripe": 1,
+   "chop_direction": "LEFT-RIGHT",
+   "corr_thresh_1": 0.5,
+   "corr_thresh_2": 0.5,
+   "double_sided": 1,
+   "dx_bottom": 320,
+   "filter_auto_pos": 1,
+   "framew": 1500,
+   "nan_exterior_extra": 1,
+   "noise_thresh_1": 2.0,
+   "noise_thresh_2": 2.0,
+   "obj": "bet Leo ",
+   "peak_thresh_1": 0.5,
+   "peak_thresh_2": 0.5,
+   "pos1": [
+    633,
+    592
+   ],
+   "pos2": [
+    833,
+    597
+   ],
+   "pre_corr_thresh_1": 0.25,
+   "pre_corr_thresh_2": 0.25,
+   "pre_noise_thresh_1": 5.0,
+   "pre_noise_thresh_2": 5.0,
+   "pre_peak_thresh_1": 0.25,
+   "pre_peak_thresh_2": 0.25,
+   "side": "both",
+   "start_frame_left": 5000,
+   "start_frame_right": 5000,
+   "test_pos_negative": 0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "BetaLeo_7": {
+  "conditionals": [],
+  "lines": [
+   957,
+   1015
+  ],
+  "settings": {
+   "auto_positions": 1,
+   "background_limit": 24000,
+   "bin": 8,
+   "chop_direction": "LEFT-RIGHT",
+   "corr_thresh_1": 0.9,
+   "corr_thresh_2": 0.9,
+   "double_sided": 1,
+   "filter_auto_pos": 1,
+   "framew": 1500,
+   "k_klip": 4,
+   "nan_edges": 0,
+   "nan_exterior_extra": 0,
+   "noise_thresh_1": 1.5,
+   "noise_thresh_2": 1.5,
+   "nref": 50,
+   "obj": "bet Leo ",
+   "peak_thresh_1": 0.7,
+   "peak_thresh_2": 0.7,
+   "pre_corr_thresh_1": 0.8,
+   "pre_corr_thresh_2": 0.8,
+   "pre_noise_thresh_1": 1.1,
+   "pre_noise_thresh_2": 1.1,
+   "pre_peak_thresh_1": 0.8,
+   "pre_peak_thresh_2": 0.8,
+   "radius": 500,
+   "ref_file_l1": "/Volumes/RAID36TB/NOMIC/Vega_6/reduced/Vega_6_left_cube1_align_cen_clean_bin_resample.fits",
+   "ref_file_l2": "/Volumes/RAID36TB/NOMIC/Vega_6/reduced/Vega_6_left_cube2_align_cen_clean_bin_resample.fits",
+   "ref_file_r1": "/Volumes/RAID36TB/NOMIC/Vega_6/reduced/Vega_6_right_cube1_align_cen_clean_bin_resample.fits",
+   "ref_file_r2": "/Volumes/RAID36TB/NOMIC/Vega_6/reduced/Vega_6_right_cube2_align_cen_clean_bin_resample.fits",
+   "refname": "Vega_6",
+   "side": "both",
+   "start_frame_left": 1000,
+   "start_frame_right": 1000
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "BetaLeo_8": {
+  "conditionals": [],
+  "lines": [
+   1017,
+   1047
+  ],
+  "settings": {
+   "background_limit": 26000,
+   "bin": 8,
+   "chop_direction": "DIAGONAL",
+   "framew": 1500,
+   "obj": "bet Leo ",
+   "pre_corr_thresh_1": 0.95,
+   "pre_corr_thresh_2": 0.95,
+   "pre_noise_thresh_1": 1.03,
+   "pre_noise_thresh_2": 1.03,
+   "pre_peak_thresh_1": 0.9,
+   "pre_peak_thresh_2": 0.9,
+   "side": "right",
+   "skip_target_check": 1,
+   "start_frame_left": 9000,
+   "start_frame_right": 9000
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "BetaLeo_9": {
+  "conditionals": [],
+  "lines": [
+   1049,
+   1092
+  ],
+  "settings": {
+   "background_limit": 30000,
+   "bin": 2,
+   "chop_direction": "LEFT-RIGHT",
+   "corr_thresh_1": 0.5,
+   "corr_thresh_2": 0.5,
+   "double_sided": 1,
+   "dx_bottom": 320,
+   "filter_auto_pos": 1,
+   "framew": 1500,
+   "noise_thresh_1": 2,
+   "noise_thresh_2": 2,
+   "obj": "bet Leo ",
+   "peak_thresh_1": 0.5,
+   "peak_thresh_2": 0.5,
+   "pre_corr_thresh_1": 0.5,
+   "pre_corr_thresh_2": 0.5,
+   "pre_noise_thresh_1": 2,
+   "pre_noise_thresh_2": 2,
+   "pre_peak_thresh_1": 0.5,
+   "pre_peak_thresh_2": 0.5,
+   "side": "both",
+   "skip_target_check": 1,
+   "start_frame_left": 3000,
+   "start_frame_right": 3000
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "BetaUma": {
+  "conditionals": [],
+  "lines": [
+   1093,
+   1115
+  ],
+  "settings": {
+   "background_limit": 24000,
+   "chop_direction": "LEFT-RIGHT",
+   "do_align": 0,
+   "do_center": 0,
+   "do_chop_sub": 0,
+   "do_combine": 0,
+   "do_split": 0,
+   "obj": "bet UMa ",
+   "pre_corr_thresh_1": 0.5,
+   "pre_corr_thresh_2": 0.5,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "BetaUma_10": {
+  "conditionals": [
+   "if skysub then n_sky=6 else n_sky=0",
+   "if testing then n_sky=1"
+  ],
+  "lines": [
+   1393,
+   1428
+  ],
+  "settings": {
+   "auto_positions": 1,
+   "background_limit": 29000,
+   "bin": 10,
+   "checksky": 0,
+   "chop_direction": "UP-DOWN",
+   "flip_sky_chop": 1,
+   "n_sky": 6,
+   "obj": "bet Uma",
+   "pre_corr_thresh_1": 0.1,
+   "pre_corr_thresh_2": 0.1,
+   "pre_noise_thresh_1": 2.0,
+   "pre_noise_thresh_2": 2.0,
+   "pre_peak_thresh_1": 0.5,
+   "pre_peak_thresh_2": 0.5,
+   "skysub": 1
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "BetaUma_11": {
+  "conditionals": [
+   "if skysub then n_sky=5 else n_sky=0",
+   "if testing then n_sky=1"
+  ],
+  "lines": [
+   1430,
+   1467
+  ],
+  "settings": {
+   "auto_positions": 1,
+   "background_limit": 29000,
+   "bin": 4,
+   "checksky": 0,
+   "chop_direction": "UP-DOWN",
+   "flip_sky_chop": 1,
+   "n_sky": 5,
+   "obj": "none",
+   "pre_corr_thresh_1": 0.1,
+   "pre_corr_thresh_2": 0.1,
+   "pre_noise_thresh_1": 2.0,
+   "pre_noise_thresh_2": 2.0,
+   "pre_peak_thresh_1": 0.5,
+   "pre_peak_thresh_2": 0.5,
+   "skysub": 1
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "BetaUma_2": {
+  "conditionals": [],
+  "lines": [
+   1116,
+   1140
+  ],
+  "settings": {
+   "background_limit": 24000,
+   "chop_direction": "UP-DOWN",
+   "do_align": 0,
+   "do_center": 0,
+   "do_chop_sub": 0,
+   "do_combine": 0,
+   "do_split": 0,
+   "obj": "beta Uma ",
+   "pre_corr_thresh_1": 0.5,
+   "pre_corr_thresh_2": 0.5,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "BetaUma_3": {
+  "conditionals": [],
+  "lines": [
+   1141,
+   1161
+  ],
+  "settings": {
+   "background_limit": 24000,
+   "chop_direction": "DIAGONAL",
+   "do_align": 0,
+   "do_center": 0,
+   "do_chop_sub": 0,
+   "do_combine": 0,
+   "do_split": 0,
+   "obj": "Beta Uma ",
+   "pre_corr_thresh_1": 0.5,
+   "pre_corr_thresh_2": 0.5,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "BetaUma_4": {
+  "conditionals": [],
+  "lines": [
+   1162,
+   1197
+  ],
+  "settings": {
+   "background_limit": 24000,
+   "chop_direction": "DIAGONAL",
+   "corr_thresh_1": 0.9,
+   "corr_thresh_2": 0.9,
+   "do_align": 0,
+   "do_center": 0,
+   "do_chop_sub": 0,
+   "do_combine": 0,
+   "do_pre_binning": 0,
+   "do_pre_clean": 0,
+   "do_split": 0,
+   "noise_thresh_1": 1.5,
+   "noise_thresh_2": 1.5,
+   "obj": "Beta Uma ",
+   "peak_thresh_1": 0.7,
+   "peak_thresh_2": 0.7,
+   "pre_corr_thresh_1": 0.05,
+   "pre_corr_thresh_2": 0.05,
+   "pre_noise_thresh_1": 5,
+   "pre_noise_thresh_2": 5,
+   "pre_peak_thresh_1": 0.05,
+   "pre_peak_thresh_2": 0.05
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "BetaUma_5": {
+  "conditionals": [],
+  "lines": [
+   1198,
+   1217
+  ],
+  "settings": {
+   "background_limit": 24000,
+   "chop_direction": "DIAGONAL",
+   "dec": 56.3824,
+   "fix_pa": 1,
+   "obj": "Beta Uma ",
+   "pre_corr_thresh_1": 0.5,
+   "pre_corr_thresh_2": 0.5,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "ra": 11.0423
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "BetaUma_6": {
+  "conditionals": [],
+  "lines": [
+   1218,
+   1249
+  ],
+  "settings": {
+   "background_limit": 24000,
+   "bin": 4,
+   "chop_direction": "DIAGONAL",
+   "dec": 56.3824,
+   "do_align": 0,
+   "do_center": 0,
+   "do_chop_sub": 0,
+   "do_combine": 0,
+   "do_split": 0,
+   "fix_pa": 1,
+   "obj": "Beta UMa ",
+   "pre_corr_thresh_1": 0.75,
+   "pre_corr_thresh_2": 0.75,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.75,
+   "pre_peak_thresh_2": 0.75,
+   "prebin": 200,
+   "ra": 11.0423
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "BetaUma_7": {
+  "conditionals": [],
+  "lines": [
+   1250,
+   1305
+  ],
+  "settings": {
+   "background_limit": 24000,
+   "bin": 4,
+   "chop_direction": "LEFT-RIGHT",
+   "corr_thresh_1": 0.1,
+   "corr_thresh_2": 0.1,
+   "do_align": 0,
+   "do_center": 0,
+   "do_chop_sub": 0,
+   "do_combine": 0,
+   "do_split": 0,
+   "double_sided": 1,
+   "dx_bottom": 320,
+   "filter_auto_pos": 1,
+   "framew": 1500,
+   "k_klip": 15,
+   "nan_edges": 0,
+   "noise_thresh_1": 2.0,
+   "obj": "bet_UMa ",
+   "peak_thresh_1": 0.5,
+   "peak_thresh_2": 0.5,
+   "pre_corr_thresh_1": 0.25,
+   "pre_corr_thresh_2": 0.25,
+   "pre_noise_thresh_1": 5.0,
+   "pre_noise_thresh_2": 5.0,
+   "pre_peak_thresh_1": 0.25,
+   "pre_peak_thresh_2": 0.25,
+   "side": "both",
+   "start_frame_left": 0,
+   "start_frame_right": 0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "BetaUma_8": {
+  "conditionals": [],
+  "lines": [
+   1306,
+   1357
+  ],
+  "settings": {
+   "auto_positions": 0,
+   "background_limit": 28000,
+   "bin": 4,
+   "chop_direction": "LEFT-RIGHT",
+   "corr_thresh_1": 0.1,
+   "corr_thresh_2": 0.1,
+   "do_align": 0,
+   "do_center": 0,
+   "do_chop_sub": 0,
+   "do_combine": 0,
+   "do_split": 0,
+   "double_sided": 1,
+   "framew": 1500,
+   "nan_edges": 0,
+   "noise_thresh_1": 2.0,
+   "obj": "Beta UMa ",
+   "peak_thresh_1": 0.5,
+   "peak_thresh_2": 0.5,
+   "pos1": [
+    555,
+    816
+   ],
+   "pos2": [
+    841,
+    816
+   ],
+   "pre_corr_thresh_1": 0.1,
+   "pre_corr_thresh_2": 0.1,
+   "pre_noise_thresh_1": 2.0,
+   "pre_noise_thresh_2": 2.0,
+   "pre_peak_thresh_1": 0.5,
+   "pre_peak_thresh_2": 0.5,
+   "side": "both"
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "BetaUma_9": {
+  "conditionals": [],
+  "lines": [
+   1359,
+   1391
+  ],
+  "settings": {
+   "auto_positions": 0,
+   "background_limit": 24000,
+   "bin": 4,
+   "chop_direction": "DIAGONAL",
+   "obj": "none",
+   "pos1": [
+    563,
+    631
+   ],
+   "pos2": [
+    824,
+    759
+   ],
+   "pre_corr_thresh_1": 0.1,
+   "pre_corr_thresh_2": 0.1,
+   "pre_noise_thresh_1": 2.0,
+   "pre_noise_thresh_2": 2.0,
+   "pre_peak_thresh_1": 0.5,
+   "pre_peak_thresh_2": 0.5
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Castor": {
+  "conditionals": [],
+  "lines": [
+   1468,
+   1487
+  ],
+  "settings": {
+   "background_limit": 24000,
+   "chop_direction": "LEFT-RIGHT",
+   "obj": "Castor",
+   "pre_corr_thresh_1": 0.5,
+   "pre_corr_thresh_2": 0.5,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "start_frame_left": 3900
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "EpsEri": {
+  "conditionals": [],
+  "lines": [
+   1488,
+   1514
+  ],
+  "settings": {
+   "background_limit": 24000,
+   "chop_direction": "LEFT-RIGHT",
+   "corr_thresh": 0.93,
+   "do_align": 0,
+   "do_center": 0,
+   "do_chop_sub": 0,
+   "do_combine": 0,
+   "do_split": 0,
+   "noise_thresh": 1.1,
+   "obj": "eps Eri ",
+   "peak_thresh": 0.7,
+   "pre_corr_thresh_1": 0.5,
+   "pre_corr_thresh_2": 0.5,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "root_dir": "/Volumes/RAID36TB/NOMIC/EpsEri/",
+   "start_frame_left": 3900
+  },
+  "unevaluated": {}
+ },
+ "EpsEri_2": {
+  "conditionals": [],
+  "lines": [
+   1515,
+   1541
+  ],
+  "settings": {
+   "chop_direction": "LEFT-RIGHT",
+   "corr_thresh": 0.93,
+   "do_align": 0,
+   "do_center": 0,
+   "do_chop_sub": 0,
+   "do_combine": 0,
+   "do_split": 0,
+   "noise_thresh": 1.1,
+   "obj": "Eps Eri ",
+   "peak_thresh": 0.7,
+   "pre_corr_thresh_1": 0.5,
+   "pre_corr_thresh_2": 0.5,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "root_dir": "/Volumes/RAID36TB/NOMIC/EpsEri_2/"
+  },
+  "unevaluated": {}
+ },
+ "EpsEri_3": {
+  "conditionals": [],
+  "lines": [
+   1542,
+   1609
+  ],
+  "settings": {
+   "angsep": 0.01,
+   "annmode_inout": [
+    5,
+    150
+   ],
+   "auto_positions": 0,
+   "bin": 6,
+   "chop_direction": "UP-DOWN",
+   "corr_thresh": 0.93,
+   "corr_thresh_1": 0.996,
+   "corr_thresh_2": 0.996,
+   "do_align": 0,
+   "do_center": 0,
+   "do_chop_sub": 0,
+   "do_combine": 0,
+   "do_pre_binning": 0,
+   "do_pre_clean": 0,
+   "do_split": 0,
+   "framew": 1500,
+   "gpsf": 1,
+   "ivert_pos": 0,
+   "k_klip": 10,
+   "klip_filter": 0.0,
+   "n_ang": 6,
+   "noise_clean": 1,
+   "noise_thresh": 1.1,
+   "noise_thresh_1": 1.05,
+   "noise_thresh_2": 1.05,
+   "obj": "eps Eri ",
+   "peak_clean": 1,
+   "peak_scale": 1,
+   "peak_thresh": 0.7,
+   "peak_thresh_1": 0.9,
+   "peak_thresh_2": 0.9,
+   "pos1": [
+    674,
+    824
+   ],
+   "pos2": [
+    679,
+    676
+   ],
+   "pre_corr_thresh_1": 0.5,
+   "pre_corr_thresh_2": 0.5,
+   "pre_noise_thresh_1": 2,
+   "pre_noise_thresh_2": 2,
+   "pre_peak_thresh_1": 0.5,
+   "pre_peak_thresh_2": 0.5,
+   "prebin": 200,
+   "root_dir": "/Volumes/RAID36TB/NOMIC/EpsEri_3/",
+   "start_frame_left": 100,
+   "subrefsky": 1
+  },
+  "unevaluated": {}
+ },
+ "EpsEri_4": {
+  "conditionals": [],
+  "lines": [
+   1610,
+   1658
+  ],
+  "settings": {
+   "annmode_inout": [
+    0,
+    150
+   ],
+   "auto_positions": 0,
+   "bin": 6,
+   "chop_direction": "DIAGONAL",
+   "corr_thresh": 0.93,
+   "do_chop_sub": 0,
+   "do_combine": 0,
+   "framew": 1500,
+   "gpsf": 1,
+   "noise_thresh": 1.1,
+   "obj": "eps Eri ",
+   "peak_thresh": 0.7,
+   "pos1": [
+    844,
+    824
+   ],
+   "pos2": [
+    650,
+    682
+   ],
+   "pre_corr_thresh_1": 0.25,
+   "pre_corr_thresh_2": 0.25,
+   "pre_noise_thresh_1": 5,
+   "pre_noise_thresh_2": 5,
+   "pre_peak_thresh_1": 0.25,
+   "pre_peak_thresh_2": 0.25,
+   "reorder": 1,
+   "root_dir": "/Volumes/RAID36TB/NOMIC/EpsEri_4/",
+   "start_frame_left": 2500,
+   "subrefsky": 1
+  },
+  "unevaluated": {}
+ },
+ "EpsEri_5": {
+  "conditionals": [],
+  "lines": [
+   1659,
+   1699
+  ],
+  "settings": {
+   "align_median_sub": 0,
+   "anglemax": 360.0,
+   "angsep": 0.1,
+   "bin": 2,
+   "chop_direction": "DIAGONAL",
+   "corr_thresh_1": 0.97,
+   "corr_thresh_2": 0.97,
+   "do_chop_sub": 0,
+   "do_combine": 0,
+   "filter_auto_pos": 1,
+   "framew": 1500,
+   "k_klip": 5,
+   "noise_thresh_1": 1.25,
+   "noise_thresh_2": 1.25,
+   "obj": "eps Eri ",
+   "peak_thresh_1": 0.95,
+   "peak_thresh_2": 0.95,
+   "pre_corr_thresh_1": 0.5,
+   "pre_corr_thresh_2": 0.5,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "GJ504": {
+  "conditionals": [],
+  "lines": [
+   1703,
+   1767
+  ],
+  "settings": {
+   "anglemax": 60,
+   "angsep": 0.01,
+   "background_limit": 26000.0,
+   "bin": 4,
+   "chop_direction": "LEFT-RIGHT",
+   "dec": 5.22499,
+   "double_sided": 1,
+   "dx_bottom": 320,
+   "filter_auto_pos": 1,
+   "fix_pa": 0,
+   "framew": 1500,
+   "k_klip": 4,
+   "n_ang": 1,
+   "nan_edges": 0,
+   "obj": "GJ504",
+   "pre_coronoise_thresh_1": 1.25,
+   "pre_coronoise_thresh_2": 1.25,
+   "pre_corr_thresh_1": 0.8,
+   "pre_corr_thresh_2": 0.8,
+   "pre_noise_thresh_1": 1.1,
+   "pre_noise_thresh_2": 1.1,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "ra": 7.65503,
+   "set_chop_via_bg": 1,
+   "side": "both",
+   "start_frame_left": 0,
+   "start_frame_right": 0,
+   "verify_clean": 0,
+   "verify_pre_clean": 0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "HR8799": {
+  "conditionals": [],
+  "lines": [
+   1768,
+   1790
+  ],
+  "settings": {
+   "align_smooth_filter": 30.0,
+   "align_smooth_width": 9.0,
+   "auto_positions": 0,
+   "blockrad": 20,
+   "chop_direction": "UP-DOWN",
+   "corr_thresh_1": 0.8,
+   "corr_thresh_2": 0.25,
+   "do_clean": 0,
+   "nbg": 10,
+   "noise_thresh_1": 1.1,
+   "noise_thresh_2": 1.15,
+   "obj": "HR8799  ",
+   "peak_thresh_1": 0.75,
+   "peak_thresh_2": 0.6,
+   "pos1": [
+    641,
+    651
+   ],
+   "pos2": [
+    638,
+    787
+   ],
+   "root_dir": "/Volumes/RAID36TB/NOMIC/HR8799/",
+   "set_chop_via_bg": 1
+  },
+  "unevaluated": {}
+ },
+ "Procyon": {
+  "conditionals": [],
+  "lines": [
+   1791,
+   1821
+  ],
+  "settings": {
+   "chop_direction": "UP-DOWN",
+   "corr_thresh_1": 0.95,
+   "corr_thresh_2": 0.95,
+   "do_align": 0,
+   "do_center": 0,
+   "do_chop_sub": 0,
+   "do_combine": 0,
+   "do_split": 0,
+   "noise_thresh_1": 1.1,
+   "noise_thresh_2": 1.1,
+   "obj": "procyon",
+   "peak_thresh_1": 0.97,
+   "peak_thresh_2": 0.97,
+   "pre_coronoise_clean": 1,
+   "pre_coronoise_thresh_1": 1.25,
+   "pre_coronoise_thresh_2": 1.25,
+   "pre_corr_thresh_1": 0.9,
+   "pre_corr_thresh_2": 0.9,
+   "pre_noise_thresh_1": 1.25,
+   "pre_noise_thresh_2": 1.25,
+   "pre_peak_thresh_1": 0.9,
+   "pre_peak_thresh_2": 0.9,
+   "root_dir": "/Volumes/RAID36TB/NOMIC/Procyon/",
+   "start_frame_left": 100
+  },
+  "unevaluated": {}
+ },
+ "Procyon_10": {
+  "conditionals": [],
+  "lines": [
+   2159,
+   2243
+  ],
+  "settings": {
+   "anglemax": 60,
+   "angsep": 0.01,
+   "background_limit": 27000,
+   "bin": 4,
+   "chop_direction": "LEFT-RIGHT",
+   "coronoise_thresh_1": 1.5,
+   "coronoise_thresh_2": 1.5,
+   "corr_thresh_1": 0.7,
+   "corr_thresh_2": 0.7,
+   "dec": 5.22499,
+   "double_sided": 1,
+   "dx_bottom": 320,
+   "end_frame_left": 99000000000.0,
+   "end_frame_right": 51080,
+   "filter_auto_pos": 1,
+   "fix_pa": 0,
+   "frame_limit": 10000,
+   "framew": 1600,
+   "k_klip": 4,
+   "n_ang": 1,
+   "nan_edges": 1,
+   "noise_thresh_1": 1.5,
+   "noise_thresh_2": 1.5,
+   "obj": "procyon",
+   "peak_thresh_1": 0.7,
+   "peak_thresh_2": 0.7,
+   "pre_coronoise_thresh_1": 1.25,
+   "pre_coronoise_thresh_2": 1.25,
+   "pre_corr_thresh_1": 0.8,
+   "pre_corr_thresh_2": 0.8,
+   "pre_noise_thresh_1": 1.1,
+   "pre_noise_thresh_2": 1.1,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "ra": 7.65503,
+   "side": "both",
+   "start_frame_left": 4500,
+   "start_frame_right": 4500
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Procyon_11": {
+  "conditionals": [
+   "if skysub then n_sky=0 else n_sky=0"
+  ],
+  "lines": [
+   2245,
+   2319
+  ],
+  "settings": {
+   "anglemax": 60,
+   "angsep": 0.01,
+   "auto_positions": 1,
+   "bin": 4,
+   "chop_direction": "LEFT-RIGHT",
+   "dec": 5.22499,
+   "double_sided": 1,
+   "filter_auto_pos": 1,
+   "fix_pa": 0,
+   "flip_sky_chop": 0,
+   "frame_limit": 6500,
+   "framew": 1700,
+   "k_klip": 4,
+   "n_ang": 1,
+   "n_sky": 0,
+   "nan_edges": 0,
+   "obj": "Procyon",
+   "pos1": [
+    610,
+    902
+   ],
+   "pos2": [
+    895,
+    591
+   ],
+   "pre_coronoise_thresh_1": 1.5,
+   "pre_coronoise_thresh_2": 1.5,
+   "pre_corr_thresh_1": 0.7,
+   "pre_corr_thresh_2": 0.7,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "ra": 7.65503,
+   "side": "right",
+   "skysub": 0,
+   "start_frame_left": 2000,
+   "start_frame_right": 7500
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Procyon_12": {
+  "conditionals": [],
+  "lines": [
+   2321,
+   2384
+  ],
+  "settings": {
+   "anglemax": 60,
+   "angsep": 0.01,
+   "bin": 4,
+   "chop_direction": "LEFT-RIGHT",
+   "dec": 5.22499,
+   "double_sided": 1,
+   "dx_bottom": 320,
+   "filter_auto_pos": 1,
+   "fix_pa": 0,
+   "framew": 1500,
+   "k_klip": 4,
+   "n_ang": 1,
+   "nan_edges": 0,
+   "obj": "Procyon",
+   "pre_coronoise_thresh_1": 1.25,
+   "pre_coronoise_thresh_2": 1.25,
+   "pre_corr_thresh_1": 0.8,
+   "pre_corr_thresh_2": 0.8,
+   "pre_noise_thresh_1": 1.1,
+   "pre_noise_thresh_2": 1.1,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "ra": 7.65503,
+   "side": "both",
+   "start_frame_left": 3500,
+   "start_frame_right": 3500
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Procyon_13": {
+  "conditionals": [],
+  "lines": [
+   2385,
+   2450
+  ],
+  "settings": {
+   "anglemax": 60,
+   "angsep": 0.01,
+   "background_limit": 28000,
+   "bin": 4,
+   "chop_direction": "LEFT-RIGHT",
+   "dec": 5.22499,
+   "double_sided": 1,
+   "dx_bottom": 320,
+   "filter_auto_pos": 1,
+   "fix_pa": 0,
+   "framew": 1500,
+   "k_klip": 4,
+   "n_ang": 1,
+   "nan_edges": 0,
+   "obj": "Procyon",
+   "pre_coronoise_thresh_1": 1.25,
+   "pre_coronoise_thresh_2": 1.25,
+   "pre_corr_thresh_1": 0.8,
+   "pre_corr_thresh_2": 0.8,
+   "pre_noise_thresh_1": 1.1,
+   "pre_noise_thresh_2": 1.1,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "ra": 7.65503,
+   "side": "both",
+   "start_frame_left": 0,
+   "start_frame_right": 0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Procyon_14": {
+  "conditionals": [],
+  "lines": [
+   2452,
+   2509
+  ],
+  "settings": {
+   "anglemax": 60,
+   "angsep": 0.01,
+   "bin": 4,
+   "chop_direction": "DIAGONAL",
+   "corr_thresh_1": 0.99,
+   "corr_thresh_2": 0.99,
+   "dec": 5.22499,
+   "fix_pa": 0,
+   "k_klip": 4,
+   "n_ang": 1,
+   "nbg": 7,
+   "noise_thresh_1": 1,
+   "noise_thresh_2": 1,
+   "obj": "none",
+   "peak_thresh_1": 0.99,
+   "peak_thresh_2": 0.99,
+   "pre_coronoise_clean": 1,
+   "pre_coronoise_thresh_1": 1.25,
+   "pre_coronoise_thresh_2": 1.25,
+   "pre_corr_thresh_1": 0.7,
+   "pre_corr_thresh_2": 0.7,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "ra": 7.65503,
+   "radius": 400,
+   "reorder": 1,
+   "start_frame_left": 2000
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Procyon_15": {
+  "conditionals": [],
+  "lines": [
+   2511,
+   2561
+  ],
+  "settings": {
+   "anglemax": 60,
+   "angsep": 0.01,
+   "bin": 8,
+   "chop_direction": "UP-DOWN",
+   "corr_thresh_2": 0.99,
+   "dec": 5.22499,
+   "fix_pa": 0,
+   "k_klip": 4,
+   "n_ang": 1,
+   "noise_thresh_1": 1,
+   "noise_thresh_2": 1,
+   "obj": "Procyon",
+   "peak_thresh_1": 0.99,
+   "peak_thresh_2": 0.99,
+   "pre_coronoise_clean": 1,
+   "pre_coronoise_thresh_1": 1.25,
+   "pre_coronoise_thresh_2": 1.25,
+   "pre_corr_thresh_1": 0.7,
+   "pre_corr_thresh_2": 0.7,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "ra": 7.65503,
+   "radius": 400,
+   "reorder": 0,
+   "start_frame_left": 0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Procyon_16": {
+  "conditionals": [],
+  "lines": [
+   2566,
+   2588
+  ],
+  "settings": {
+   "angsep": 0.01,
+   "chop_direction": "UP-DOWN",
+   "dec": 5.22499,
+   "fix_pa": 0,
+   "obj": "procyon",
+   "ra": 7.65503,
+   "radius": 400,
+   "reorder": 0,
+   "start_frame_left": 0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Procyon_17": {
+  "conditionals": [
+   "if skysub then n_sky=1 else n_sky=0"
+  ],
+  "lines": [
+   2591,
+   2634
+  ],
+  "settings": {
+   "angsep": 0.1,
+   "bin": 8,
+   "chop_direction": "DIAGONAL",
+   "dec": 5.22499,
+   "fix_pa": 0,
+   "flip_sky_chop": 1,
+   "n_sky": 1,
+   "obj": "procyon",
+   "pre_coronoise_clean": 0,
+   "pre_corr_thresh_1": 0.95,
+   "pre_corr_thresh_2": 0.95,
+   "pre_noise_thresh_1": 5,
+   "pre_noise_thresh_2": 5,
+   "pre_peak_thresh_1": 0.9,
+   "pre_peak_thresh_2": 0.9,
+   "ra": 7.65503,
+   "radius": 400,
+   "reorder": 0,
+   "skysub": 1,
+   "start_frame_left": 0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Procyon_18": {
+  "conditionals": [
+   "if skysub then n_sky=1 else n_sky=0"
+  ],
+  "lines": [
+   2638,
+   2683
+  ],
+  "settings": {
+   "angsep": 0.1,
+   "background_limit": 27000,
+   "bin": 8,
+   "chop_direction": "DIAGONAL",
+   "dec": 5.22499,
+   "fix_pa": 0,
+   "flip_sky_chop": 1,
+   "n_sky": 1,
+   "obj": "Procyon",
+   "pre_coronoise_clean": 0,
+   "pre_corr_thresh_1": 0.95,
+   "pre_corr_thresh_2": 0.95,
+   "pre_noise_thresh_1": 5,
+   "pre_noise_thresh_2": 5,
+   "pre_peak_thresh_1": 0.9,
+   "pre_peak_thresh_2": 0.9,
+   "ra": 7.65503,
+   "radius": 400,
+   "skysub": 1,
+   "start_frame_left": 0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Procyon_19": {
+  "conditionals": [
+   "if skysub then n_sky=1 else n_sky=0"
+  ],
+  "lines": [
+   2685,
+   2723
+  ],
+  "settings": {
+   "angsep": 0.1,
+   "bin": 8,
+   "chop_direction": "DIAGONAL",
+   "dec": 5.22499,
+   "fix_pa": 0,
+   "flip_sky_chop": 0,
+   "n_sky": 1,
+   "obj": "Procyon",
+   "pre_corr_thresh_1": 0.95,
+   "pre_corr_thresh_2": 0.95,
+   "pre_noise_thresh_1": 5,
+   "pre_noise_thresh_2": 5,
+   "pre_peak_thresh_1": 0.9,
+   "pre_peak_thresh_2": 0.9,
+   "ra": 7.65503,
+   "radius": 400,
+   "reorder": 0,
+   "skysub": 1,
+   "start_frame_left": 0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Procyon_2": {
+  "conditionals": [],
+  "lines": [
+   1822,
+   1838
+  ],
+  "settings": {
+   "chop_direction": "LEFT-RIGHT",
+   "corr_thresh_1": 0.95,
+   "corr_thresh_2": 0.95,
+   "noise_thresh_1": 1.1,
+   "noise_thresh_2": 1.1,
+   "obj": "Procyon",
+   "peak_thresh_1": 0.97,
+   "peak_thresh_2": 0.97,
+   "pre_noise_thresh_1": 1.25,
+   "pre_noise_thresh_2": 1.25,
+   "pre_peak_thresh_1": 0.9,
+   "pre_peak_thresh_2": 0.9,
+   "root_dir": "/Volumes/RAID36TB/NOMIC/Procyon_2/"
+  },
+  "unevaluated": {}
+ },
+ "Procyon_20": {
+  "conditionals": [
+   "if skysub then n_sky=1 else n_sky=0"
+  ],
+  "lines": [
+   2726,
+   2769
+  ],
+  "settings": {
+   "angsep": 0.1,
+   "bin": 1,
+   "chop_direction": "DIAGONAL",
+   "dec": 5.22499,
+   "fix_pa": 0,
+   "flip_sky_chop": 1,
+   "n_sky": 1,
+   "obj": "Procyon",
+   "pre_coronoise_clean": 0,
+   "pre_corr_thresh_1": 0.95,
+   "pre_corr_thresh_2": 0.95,
+   "pre_noise_thresh_1": 5,
+   "pre_noise_thresh_2": 5,
+   "pre_peak_thresh_1": 0.9,
+   "pre_peak_thresh_2": 0.9,
+   "ra": 7.65503,
+   "radius": 400,
+   "reorder": 1,
+   "skysub": 1,
+   "start_frame_left": 0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Procyon_21": {
+  "conditionals": [
+   "if skysub then n_sky=3 else n_sky=0"
+  ],
+  "lines": [
+   2772,
+   2841
+  ],
+  "settings": {
+   "adi_filter": 25.0,
+   "anglemax": 360.0,
+   "angsep": 0.5,
+   "annular_clean": 1,
+   "background_limit": 28000.0,
+   "bin": 10,
+   "chop_direction": "DIAGONAL",
+   "corr_thresh_1": 0.999,
+   "corr_thresh_2": 0.999,
+   "dec": 5.22499,
+   "do_clean": 0,
+   "do_combine": 0,
+   "do_destripe": 1,
+   "fix_pa": 0,
+   "flip_sky_chop": 0,
+   "k_klip": 4,
+   "klip_filter": 25.0,
+   "n_ang": 4,
+   "n_sky": 3,
+   "noise_thresh_1": 1.5,
+   "noise_thresh_2": 1.5,
+   "nrings": 12,
+   "obj": "Procyon",
+   "peak_thresh_1": 0.95,
+   "peak_thresh_2": 0.95,
+   "pre_coronoise_clean": 0,
+   "pre_corr_thresh_1": 0.95,
+   "pre_corr_thresh_2": 0.95,
+   "pre_noise_thresh_1": 5,
+   "pre_noise_thresh_2": 5,
+   "pre_peak_thresh_1": 0.9,
+   "pre_peak_thresh_2": 0.9,
+   "ra": 7.65503,
+   "radius": 400,
+   "reorder": 0,
+   "second_klip_filter": 25.0,
+   "skip_target_check": 1,
+   "skysub": 1,
+   "start_frame_left": 950
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)",
+   "wr": "round(radius/float(nrings))"
+  }
+ },
+ "Procyon_22": {
+  "conditionals": [
+   "if skysub then n_sky=2 else n_sky=0"
+  ],
+  "lines": [
+   2843,
+   2913
+  ],
+  "settings": {
+   "adi_filter": 25.0,
+   "anglemax": 360.0,
+   "angsep": 0.0,
+   "annular_clean": 1,
+   "background_limit": 28000.0,
+   "bin": 5,
+   "chop_direction": "UP-DOWN",
+   "corr_thresh_1": 0.99885,
+   "corr_thresh_2": 0.99885,
+   "dec": 5.22499,
+   "do_clean": 0,
+   "do_combine": 0,
+   "do_destripe": 1,
+   "fix_pa": 0,
+   "flip_sky_chop": 1,
+   "k_klip": 4,
+   "klip_filter": 25.0,
+   "n_ang": 6,
+   "n_sky": 2,
+   "noise_thresh_1": 1.5,
+   "noise_thresh_2": 1.5,
+   "nrings": 12,
+   "obj": "Procyon",
+   "peak_thresh_1": 0.95,
+   "peak_thresh_2": 0.95,
+   "pre_coronoise_clean": 0,
+   "pre_corr_thresh_1": 0.95,
+   "pre_corr_thresh_2": 0.95,
+   "pre_noise_thresh_1": 5,
+   "pre_noise_thresh_2": 5,
+   "pre_peak_thresh_1": 0.9,
+   "pre_peak_thresh_2": 0.9,
+   "ra": 7.65503,
+   "radius": 400,
+   "reorder": 0,
+   "second_klip_filter": 25.0,
+   "skysub": 1,
+   "start_frame_left": 2500
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)",
+   "wr": "round(radius/float(nrings))"
+  }
+ },
+ "Procyon_23": {
+  "conditionals": [
+   "if skysub then n_sky=2 else n_sky=0"
+  ],
+  "lines": [
+   2915,
+   2985
+  ],
+  "settings": {
+   "adi_filter": 25.0,
+   "anglemax": 360.0,
+   "angsep": 0.0,
+   "annular_clean": 1,
+   "background_limit": 28000.0,
+   "bin": 10,
+   "chop_direction": "UP-DOWN",
+   "corr_thresh_1": 0.99,
+   "corr_thresh_2": 0.99,
+   "do_align": 0,
+   "do_center": 0,
+   "do_chop_sub": 0,
+   "do_clean": 0,
+   "do_combine": 0,
+   "do_destripe": 1,
+   "do_split": 0,
+   "flip_sky_chop": 0,
+   "k_klip": 4,
+   "klip_filter": 25.0,
+   "n_ang": 6,
+   "n_sky": 2,
+   "noise_thresh_1": 1.5,
+   "noise_thresh_2": 1.5,
+   "nrings": 12,
+   "obj": "none",
+   "peak_thresh_1": 0.95,
+   "peak_thresh_2": 0.95,
+   "pre_coronoise_clean": 0,
+   "pre_corr_thresh_1": 0.95,
+   "pre_corr_thresh_2": 0.95,
+   "pre_noise_thresh_1": 5,
+   "pre_noise_thresh_2": 5,
+   "pre_peak_thresh_1": 0.9,
+   "pre_peak_thresh_2": 0.9,
+   "radius": 400,
+   "reorder": 0,
+   "second_klip_filter": 25.0,
+   "skysub": 1,
+   "start_frame_left": 1500
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)",
+   "wr": "round(radius/float(nrings))"
+  }
+ },
+ "Procyon_24": {
+  "conditionals": [
+   "if skysub then n_sky=6 else n_sky=0",
+   "if testing then n_sky=1"
+  ],
+  "lines": [
+   2988,
+   3068
+  ],
+  "settings": {
+   "adi_filter": 25.0,
+   "anglemax": 360.0,
+   "angsep": 0.01,
+   "annular_clean": 1,
+   "background_limit": 28000.0,
+   "bin": 10,
+   "chop_direction": "UP-DOWN",
+   "corr_thresh_1": 0.98,
+   "corr_thresh_2": 0.98,
+   "do_clean": 0,
+   "do_destripe": 1,
+   "flip_sky_chop": 1,
+   "k_klip": 4,
+   "klip_filter": 25.0,
+   "n_ang": 6,
+   "n_sky": 6,
+   "noise_thresh_1": 1.5,
+   "noise_thresh_2": 1.5,
+   "nrings": 12,
+   "obj": "Procyon",
+   "peak_thresh_1": 0.95,
+   "peak_thresh_2": 0.95,
+   "pre_coronoise_clean": 0,
+   "pre_corr_thresh_1": 0.95,
+   "pre_corr_thresh_2": 0.95,
+   "pre_noise_thresh_1": 5,
+   "pre_noise_thresh_2": 5,
+   "pre_peak_thresh_1": 0.9,
+   "pre_peak_thresh_2": 0.9,
+   "radius": 400,
+   "reorder": 0,
+   "second_klip_filter": 25.0,
+   "skip_target_check": 1,
+   "skysub": 1,
+   "start_frame_left": 0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)",
+   "wr": "round(radius/float(nrings))"
+  }
+ },
+ "Procyon_25": {
+  "conditionals": [
+   "if skysub then n_sky=2 else n_sky=0",
+   "if testing then n_sky=1"
+  ],
+  "lines": [
+   3071,
+   3128
+  ],
+  "settings": {
+   "anglemax": 10,
+   "angsep": 0.5,
+   "annular_clean": 1,
+   "background_limit": 28000.0,
+   "bin": 5,
+   "chop_direction": "UP-DOWN",
+   "corr_thresh_1": 0.95,
+   "corr_thresh_2": 0.95,
+   "do_clean": 0,
+   "flip_sky_chop": 0,
+   "k_klip": 6,
+   "n_ang": 4,
+   "n_sky": 2,
+   "noise_thresh_1": 1.5,
+   "noise_thresh_2": 1.5,
+   "obj": "Procyon",
+   "peak_thresh_1": 0.9,
+   "peak_thresh_2": 0.9,
+   "pre_coronoise_clean": 0,
+   "pre_corr_thresh_1": 0.95,
+   "pre_corr_thresh_2": 0.95,
+   "pre_noise_thresh_1": 5,
+   "pre_noise_thresh_2": 5,
+   "pre_peak_thresh_1": 0.9,
+   "pre_peak_thresh_2": 0.9,
+   "radius": 500,
+   "reorder": 0,
+   "skip_target_check": 1,
+   "skysub": 1,
+   "start_frame_left": 2800
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Procyon_26": {
+  "conditionals": [
+   "if skysub then n_sky=4 else n_sky=0",
+   "if testing then n_sky=1"
+  ],
+  "lines": [
+   3131,
+   3188
+  ],
+  "settings": {
+   "anglemax": 30,
+   "angsep": 0.1,
+   "annular_clean": 1,
+   "background_limit": 28000.0,
+   "bin": 4,
+   "chop_direction": "UP-DOWN",
+   "corr_thresh_1": 0.98,
+   "corr_thresh_2": 0.98,
+   "do_clean": 0,
+   "flip_sky_chop": 1,
+   "k_klip": 15,
+   "n_ang": 6,
+   "n_sky": 4,
+   "noise_thresh_1": 1.5,
+   "noise_thresh_2": 1.5,
+   "obj": "Procyon",
+   "peak_thresh_1": 0.9,
+   "peak_thresh_2": 0.9,
+   "pre_coronoise_clean": 0,
+   "pre_corr_thresh_1": 0.95,
+   "pre_corr_thresh_2": 0.95,
+   "pre_noise_thresh_1": 5,
+   "pre_noise_thresh_2": 5,
+   "pre_peak_thresh_1": 0.9,
+   "pre_peak_thresh_2": 0.9,
+   "radius": 400,
+   "reorder": 0,
+   "skip_target_check": 1,
+   "skysub": 1,
+   "start_frame_left": 0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Procyon_27": {
+  "conditionals": [
+   "if skysub then n_sky=4 else n_sky=0",
+   "if testing then n_sky=1"
+  ],
+  "lines": [
+   3190,
+   3226
+  ],
+  "settings": {
+   "angsep": 0.1,
+   "background_limit": 28000.0,
+   "bin": 10,
+   "chop_direction": "UP-DOWN",
+   "flip_sky_chop": 1,
+   "n_sky": 4,
+   "obj": "Procyon",
+   "pre_coronoise_clean": 0,
+   "pre_corr_thresh_1": 0.95,
+   "pre_corr_thresh_2": 0.95,
+   "pre_noise_thresh_1": 5,
+   "pre_noise_thresh_2": 5,
+   "pre_peak_thresh_1": 0.9,
+   "pre_peak_thresh_2": 0.9,
+   "radius": 400,
+   "reorder": 0,
+   "skip_target_check": 1,
+   "skysub": 1,
+   "start_frame_left": 0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Procyon_28": {
+  "conditionals": [
+   "if skysub then n_sky=4 else n_sky=0",
+   "if testing then n_sky=0"
+  ],
+  "lines": [
+   3229,
+   3265
+  ],
+  "settings": {
+   "angsep": 0.1,
+   "background_limit": 28000.0,
+   "bin": 1,
+   "chop_direction": "UP-DOWN",
+   "flip_sky_chop": 1,
+   "n_sky": 0,
+   "obj": "procyon",
+   "pre_coronoise_clean": 0,
+   "pre_corr_thresh_1": 0.95,
+   "pre_corr_thresh_2": 0.95,
+   "pre_noise_thresh_1": 5,
+   "pre_noise_thresh_2": 5,
+   "pre_peak_thresh_1": 0.9,
+   "pre_peak_thresh_2": 0.9,
+   "radius": 500,
+   "reorder": 0,
+   "skip_target_check": 0,
+   "skysub": 0,
+   "start_frame_left": 0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Procyon_3": {
+  "conditionals": [],
+  "lines": [
+   1839,
+   1896
+  ],
+  "settings": {
+   "adi_filter": 25.0,
+   "annular_clean": 1,
+   "blockrad": 55,
+   "chop_direction": "UP-DOWN",
+   "corr_thresh_1": 0.997,
+   "corr_thresh_2": 0.997,
+   "do_align": 0,
+   "do_center": 0,
+   "do_chop_sub": 0,
+   "do_clean": 0,
+   "do_combine": 0,
+   "do_split": 0,
+   "k_klip": 5,
+   "klip_filter": 25.0,
+   "n_ang": 6,
+   "noise_thresh_1": 1.5,
+   "noise_thresh_2": 1.5,
+   "obj": "procyon",
+   "peak_thresh_1": 0.9,
+   "peak_thresh_2": 0.9,
+   "pre_coronoise_clean": 0,
+   "pre_coronoise_thresh_1": 1.25,
+   "pre_coronoise_thresh_2": 1.25,
+   "pre_corr_thresh_1": 0.9,
+   "pre_corr_thresh_2": 0.9,
+   "pre_noise_clean": 1,
+   "pre_noise_thresh_1": 1.05,
+   "pre_noise_thresh_2": 1.05,
+   "pre_peak_clean": 1,
+   "pre_peak_scale": 1,
+   "pre_peak_thresh_1": 0.95,
+   "pre_peak_thresh_2": 0.95,
+   "radfilt": 0,
+   "root_dir": "/Volumes/RAID36TB/NOMIC/Procyon_3/",
+   "second_klip_filter": 25.0,
+   "start_frame_left": 1545
+  },
+  "unevaluated": {}
+ },
+ "Procyon_4": {
+  "conditionals": [],
+  "lines": [
+   1897,
+   1927
+  ],
+  "settings": {
+   "adi_filter": 21.0,
+   "anglemax": 360.0,
+   "angsep": 0.1,
+   "bin": 3,
+   "chop_direction": "UP-DOWN",
+   "corr_thresh_1": 0.999,
+   "corr_thresh_2": 0.999,
+   "k_klip": 5,
+   "klip_filter": 21.0,
+   "n_ang": 4,
+   "noise_thresh_1": 1.015,
+   "noise_thresh_2": 1.015,
+   "obj": "procyon ",
+   "peak_thresh_1": 0.99,
+   "peak_thresh_2": 0.99,
+   "root_dir": "/Volumes/RAID36TB/NOMIC/Procyon_4/",
+   "second_klip_filter": 21.0
+  },
+  "unevaluated": {}
+ },
+ "Procyon_5": {
+  "conditionals": [],
+  "lines": [
+   1928,
+   1949
+  ],
+  "settings": {
+   "anglemax": 35.0,
+   "angsep": 0.01,
+   "chop_direction": "DIAGONAL",
+   "corr_thresh_1": 0.99,
+   "corr_thresh_2": 0.99,
+   "k_klip": 5,
+   "n_ang": 1,
+   "noise_thresh_1": 1.05,
+   "noise_thresh_2": 1.05,
+   "obj": "Procyon ",
+   "peak_thresh_1": 0.9,
+   "peak_thresh_2": 0.9,
+   "root_dir": "/Volumes/RAID36TB/NOMIC/Procyon_5/"
+  },
+  "unevaluated": {}
+ },
+ "Procyon_6": {
+  "conditionals": [],
+  "lines": [
+   1950,
+   1979
+  ],
+  "settings": {
+   "anglemax": 360,
+   "angsep": 0.15,
+   "bin": 3,
+   "chop_direction": "DIAGONAL",
+   "corr_thresh_1": 0.99,
+   "corr_thresh_2": 0.99,
+   "k_klip": 4,
+   "noise_thresh_1": 1.05,
+   "noise_thresh_2": 1.05,
+   "obj": "Procyon ",
+   "peak_thresh_1": 0.97,
+   "peak_thresh_2": 0.97,
+   "pre_corr_thresh_1": 0.9,
+   "pre_corr_thresh_2": 0.9,
+   "pre_noise_thresh_1": 1.1,
+   "pre_noise_thresh_2": 1.1,
+   "pre_peak_thresh_1": 0.9,
+   "pre_peak_thresh_2": 0.9,
+   "root_dir": "/Volumes/RAID36TB/NOMIC/Procyon_6/",
+   "start_frame_left": 100
+  },
+  "unevaluated": {}
+ },
+ "Procyon_7": {
+  "conditionals": [],
+  "lines": [
+   1980,
+   2033
+  ],
+  "settings": {
+   "anglemax": 360,
+   "angsep": 0.05,
+   "bin": 15,
+   "chop_direction": "DIAGONAL",
+   "corr_thresh_1": 0.999,
+   "corr_thresh_2": 0.999,
+   "dec": 5.22499,
+   "fix_pa": 1,
+   "k_klip": 2,
+   "n_ang": 8,
+   "noise_thresh_1": 1,
+   "noise_thresh_2": 1,
+   "obj": "Procyon ",
+   "peak_thresh_1": 0.99,
+   "peak_thresh_2": 0.99,
+   "pre_coronoise_clean": 1,
+   "pre_coronoise_thresh_1": 1.25,
+   "pre_coronoise_thresh_2": 1.25,
+   "pre_corr_thresh_1": 0.7,
+   "pre_corr_thresh_2": 0.7,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "ra": 7.65503,
+   "start_frame_left": 6900
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Procyon_8": {
+  "conditionals": [],
+  "lines": [
+   2036,
+   2095
+  ],
+  "settings": {
+   "adi_filter": 25.0,
+   "anglemax": 25,
+   "angsep": 0.05,
+   "bin": 8,
+   "chop_direction": "DIAGONAL",
+   "corr_thresh_1": 0.99,
+   "corr_thresh_2": 0.99,
+   "dec": 5.22499,
+   "do_destripe": 0,
+   "fix_pa": 1,
+   "framew": 1500,
+   "k_klip": 7,
+   "klip_filter": 25.0,
+   "n_ang": 8,
+   "noise_thresh_1": 1.05,
+   "noise_thresh_2": 1.05,
+   "nrings": 12,
+   "obj": "Procyon ",
+   "peak_thresh_1": 0.99,
+   "peak_thresh_2": 0.99,
+   "ra": 7.65503,
+   "second_klip_filter": 25.0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)",
+   "wr": "round(radius/float(nrings))"
+  }
+ },
+ "Procyon_9": {
+  "conditionals": [],
+  "lines": [
+   2098,
+   2157
+  ],
+  "settings": {
+   "anglemax": 60,
+   "angsep": 0.01,
+   "bin": 4,
+   "chop_direction": "LEFT-RIGHT",
+   "dec": 5.22499,
+   "double_sided": 1,
+   "dx_bottom": 320,
+   "filter_auto_pos": 1,
+   "fix_pa": 1,
+   "framew": 1500,
+   "k_klip": 4,
+   "n_ang": 1,
+   "nan_edges": 0,
+   "obj": "Procyon",
+   "pre_coronoise_thresh_1": 1.25,
+   "pre_coronoise_thresh_2": 1.25,
+   "pre_corr_thresh_1": 0.8,
+   "pre_corr_thresh_2": 0.8,
+   "pre_noise_thresh_1": 1.1,
+   "pre_noise_thresh_2": 1.1,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "ra": 7.65503,
+   "side": "both",
+   "start_frame_left": 550,
+   "start_frame_right": 550
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Regulus": {
+  "conditionals": [],
+  "lines": [
+   3269,
+   3287
+  ],
+  "settings": {
+   "bin": 4,
+   "chop_direction": "UP-DOWN",
+   "obj": "Alpha Leo",
+   "pre_corr_thresh_1": 0.85,
+   "pre_corr_thresh_2": 0.85,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "reorder": 1
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Regulus_2": {
+  "conditionals": [],
+  "lines": [
+   3290,
+   3320
+  ],
+  "settings": {
+   "bin": 4,
+   "chop_direction": "UP-DOWN",
+   "do_align": 0,
+   "do_center": 0,
+   "do_chop_sub": 0,
+   "do_combine": 0,
+   "do_pre_binning": 0,
+   "do_pre_clean": 0,
+   "do_split": 0,
+   "obj": "Regulus",
+   "pre_corr_thresh_1": 0.85,
+   "pre_corr_thresh_2": 0.85,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "radius": 400,
+   "reorder": 1,
+   "start_frame_left": 100
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Sirius": {
+  "conditionals": [],
+  "lines": [
+   3323,
+   3346
+  ],
+  "settings": {
+   "chop_direction": "UP-DOWN",
+   "corr_thresh_1": 0.99,
+   "corr_thresh_2": 0.99,
+   "noise_thresh_1": 1.2,
+   "noise_thresh_2": 1.2,
+   "obj": "Sirius  ",
+   "peak_thresh_1": 0.7,
+   "peak_thresh_2": 0.7,
+   "pre_corr_thresh_1": 0.85,
+   "pre_corr_thresh_2": 0.85,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Sirius_2": {
+  "conditionals": [],
+  "lines": [
+   3347,
+   3359
+  ],
+  "settings": {
+   "chop_direction": "LEFT-RIGHT",
+   "corr_thresh_1": 0.99,
+   "corr_thresh_2": 0.99,
+   "noise_thresh_1": 1.2,
+   "noise_thresh_2": 1.2,
+   "obj": "sirius  ",
+   "peak_thresh_1": 0.7,
+   "peak_thresh_2": 0.7
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Sirius_3": {
+  "conditionals": [],
+  "lines": [
+   3360,
+   3372
+  ],
+  "settings": {
+   "chop_direction": "DIAGONAL",
+   "corr_thresh_1": 0.99,
+   "corr_thresh_2": 0.99,
+   "noise_thresh_1": 1.2,
+   "noise_thresh_2": 1.2,
+   "obj": "Sirius  ",
+   "peak_thresh_1": 0.7,
+   "peak_thresh_2": 0.7
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "TauCeti_2": {
+  "conditionals": [],
+  "lines": [
+   3375,
+   3392
+  ],
+  "settings": {
+   "chop_direction": "LEFT-RIGHT",
+   "do_pre_clean": 0,
+   "obj": "tau Cet ",
+   "pre_corr_thresh_1": 0.85,
+   "pre_corr_thresh_2": 0.85,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "root_dir": "/Volumes/RAID36TB/NOMIC/TauCeti_2/",
+   "start_frame_left": 595
+  },
+  "unevaluated": {}
+ },
+ "Vega": {
+  "conditionals": [],
+  "lines": [
+   3393,
+   3422
+  ],
+  "settings": {
+   "chop_direction": "UP-DOWN",
+   "corr_thresh_1": 0.99,
+   "corr_thresh_2": 0.99,
+   "noise_thresh_1": 1.2,
+   "noise_thresh_2": 1.2,
+   "obj": "vega  ",
+   "peak_thresh_1": 0.7,
+   "peak_thresh_2": 0.7,
+   "pre_corr_thresh_1": 0.85,
+   "pre_corr_thresh_2": 0.85,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "start_frame_left": 200
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Vega_2": {
+  "conditionals": [],
+  "lines": [
+   3423,
+   3455
+  ],
+  "settings": {
+   "chop_direction": "DIAGONAL",
+   "corr_thresh_1": 0.99,
+   "corr_thresh_2": 0.99,
+   "noise_thresh_1": 1.2,
+   "noise_thresh_2": 1.2,
+   "obj": "Vega  ",
+   "peak_thresh_1": 0.7,
+   "peak_thresh_2": 0.7,
+   "pre_corr_thresh_1": 0.85,
+   "pre_corr_thresh_2": 0.85,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "radfilt": 0
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Vega_3": {
+  "conditionals": [],
+  "lines": [
+   3457,
+   3501
+  ],
+  "settings": {
+   "auto_positions": 1,
+   "background_limit": 24000,
+   "chop_direction": "LEFT-RIGHT",
+   "corr_thresh_1": 0.8,
+   "corr_thresh_2": 0.6,
+   "double_sided": 1,
+   "filter_auto_pos": 1,
+   "framew": 1500,
+   "noise_thresh_1": 2,
+   "noise_thresh_2": 5,
+   "obj": "Vega  ",
+   "peak_thresh_1": 0.8,
+   "peak_thresh_2": 0.0,
+   "pos1": [
+    632,
+    591
+   ],
+   "pos2": [
+    895,
+    591
+   ],
+   "pre_coronoise_clean": 0,
+   "pre_corr_thresh_1": 0.5,
+   "pre_corr_thresh_2": 0.5,
+   "pre_noise_clean": 0,
+   "pre_peak_clean": 0,
+   "radius": 400,
+   "reorder": 0,
+   "side": "both",
+   "start_frame_left": 2020
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Vega_4": {
+  "conditionals": [],
+  "lines": [
+   3503,
+   3522
+  ],
+  "settings": {
+   "bin": 4,
+   "chop_direction": "LEFT-RIGHT",
+   "double_sided": 1,
+   "framew": 1500,
+   "obj": "Vega  ",
+   "radius": 400,
+   "reorder": 0,
+   "side": "both",
+   "start_frame_left": 3100,
+   "start_frame_right": 8500
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Vega_5": {
+  "conditionals": [],
+  "lines": [
+   3524,
+   3540
+  ],
+  "settings": {
+   "chop_direction": "LEFT-RIGHT",
+   "double_sided": 1,
+   "framew": 1500,
+   "obj": "Vega  ",
+   "radius": 400,
+   "reorder": 0,
+   "side": "both",
+   "start_frame_left": 1500,
+   "start_frame_right": 1500
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "Vega_6": {
+  "conditionals": [],
+  "lines": [
+   3544,
+   3562
+  ],
+  "settings": {
+   "bin": 3,
+   "chop_direction": "LEFT-RIGHT",
+   "double_sided": 1,
+   "framew": 1500,
+   "obj": "Vega  ",
+   "radius": 400,
+   "reorder": 0,
+   "side": "both",
+   "start_frame_left": 10000,
+   "start_frame_right": 10000
+  },
+  "unevaluated": {
+   "root_dir": "strcompress('/Volumes/RAID36TB/NOMIC/'+name+'/',/rem)"
+  }
+ },
+ "WR137": {
+  "conditionals": [],
+  "lines": [
+   3565,
+   3601
+  ],
+  "settings": {
+   "adi_filter": 30,
+   "chop_direction": "DIAGONAL",
+   "corr_thresh_1": 0.3,
+   "corr_thresh_2": 0.3,
+   "delete_chop": 0,
+   "filter_auto_pos": 1,
+   "noise_thresh_1": 1.5,
+   "noise_thresh_2": 1.5,
+   "obj": "WR137",
+   "peak_thresh_1": 0.7,
+   "peak_thresh_2": 0.7,
+   "pre_coronoise_clean": 0,
+   "pre_corr_thresh_1": 0.3,
+   "pre_corr_thresh_2": 0.3,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "root_dir": "/Volumes/RAID36TB/NOMIC/WR137/",
+   "start_frame_left": 0
+  },
+  "unevaluated": {}
+ },
+ "WR140": {
+  "conditionals": [],
+  "lines": [
+   3603,
+   3650
+  ],
+  "settings": {
+   "adi_filter": 30,
+   "auto_positions": 0,
+   "chop_direction": "DIAGONAL",
+   "corr_thresh_1": 0.3,
+   "corr_thresh_2": 0.3,
+   "delete_chop": 0,
+   "delete_splitcubes": 0,
+   "delete_subcubes": 0,
+   "do_chop_sub": 0,
+   "do_combine": 0,
+   "do_split": 1,
+   "filter_auto_pos": 1,
+   "noise_thresh_1": 1.5,
+   "noise_thresh_2": 1.5,
+   "obj": "WR140",
+   "peak_thresh_1": 0.7,
+   "peak_thresh_2": 0.7,
+   "pos1": [
+    580,
+    630
+   ],
+   "pos2": [
+    815,
+    766
+   ],
+   "pre_coronoise_clean": 0,
+   "pre_corr_thresh_1": 0.3,
+   "pre_corr_thresh_2": 0.3,
+   "pre_noise_thresh_1": 1.5,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.7,
+   "pre_peak_thresh_2": 0.7,
+   "root_dir": "/Volumes/RAID36TB/NOMIC/WR140/",
+   "start_frame_left": 1500
+  },
+  "unevaluated": {}
+ },
+ "WR140_2": {
+  "conditionals": [],
+  "lines": [
+   3653,
+   3697
+  ],
+  "settings": {
+   "adi_filter": 30,
+   "chop_direction": "UP-DOWN",
+   "corr_thresh_1": 0.0,
+   "corr_thresh_2": 0.0,
+   "delete_chop": 0,
+   "filter_auto_pos": 1,
+   "framew": 2000,
+   "noise_clean": 0,
+   "noise_thresh_1": 9.9e+100,
+   "noise_thresh_2": 9.9e+100,
+   "obj": "WR140",
+   "peak_clean": 0,
+   "peak_scale": 0,
+   "peak_thresh_1": 0.0,
+   "peak_thresh_2": 0.0,
+   "pre_coronoise_clean": 0,
+   "pre_corr_thresh_1": 0.0,
+   "pre_corr_thresh_2": 0.3,
+   "pre_noise_thresh_1": 9.9e+100,
+   "pre_noise_thresh_2": 1.5,
+   "pre_peak_thresh_1": 0.0,
+   "pre_peak_thresh_2": 0.7,
+   "root_dir": "/Volumes/RAID36TB/NOMIC/WR140_2/",
+   "set_chop_via_bg": 1,
+   "start_frame_left": 500,
+   "verify_total_pre_clean": 0
+  },
+  "unevaluated": {}
+ }
+}
