@@ -70,6 +70,8 @@ PORT_DEFAULTS: Dict[str, Any] = {
     "out_subdir": "reduced_py",
     "idl_oddeven": True,    # reproduce the 2x2 smoothing of remove_oddeven_noise (IDL precedence bug)
     "idl_smooth_bg": True,  # reproduce smooth_bg having no effect (IDL misspelling)
+    "chopid_destripe": True,  # subtract each row's median, per channel half, from the chop-ID image
+                              # (not in the IDL predecessor; False reproduces it)
     "seed": 0,              # seed for the random frame draws of the center stage
     "workers": 1,
     "display": False,       # live display (window, or a PNG when no X display is available)

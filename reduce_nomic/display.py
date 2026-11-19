@@ -2,8 +2,8 @@
 
 With ``--display`` the driver shows, as the stages run:
 
-* top row, the chop identification of the current round: the latest raw frame's crude star
-  image with its detected star; the detected star position of every frame so far, colored by
+* top row, the chop identification of the current round: the image the latest frame's chop
+  state was decided from (the crude star image), with its detected star; the detected star position of every frame so far, colored by
   the chop state the pipeline gives it; the quantity that decides the chop state over the most
   recent frames, which alternates around its threshold while the chop is being identified (the
   star's x or y, or the change of the stripe mean for sky rounds and ``set_chop_via_bg``);
@@ -356,7 +356,7 @@ class LiveView:
         self.ax["prog"] = fig.add_subplot(gs[2, :])
         self._suptitle = fig.suptitle(self.title, fontsize=11, fontweight="bold")
         self._round = {"tag": "", "value_name": "", "threshold": 256.0, "direction": "LEFT-RIGHT",
-                       "via_bg": False}
+                       "via_bg": False, "desc": ""}
         self._frames = {"num": [], "x": [], "y": [], "code": [], "value": []}
         self._skipped = 0
         self._raw = None
@@ -407,7 +407,7 @@ class LiveView:
 
     # -- data from the driver --------------------------------------------------------------
     def start_round(self, tag: str, value_name: str, threshold: float, direction: str,
-                    via_bg: bool = False) -> None:
+                    via_bg: bool = False, desc: str = "") -> None:
         """Start the chop-identification panels afresh for a new round.
 
         Parameters
@@ -424,6 +424,8 @@ class LiveView:
             (split at y = 256).
         via_bg : bool, default False
             True when the stripe-mean change decides (``set_chop_via_bg``, and every sky round).
+        desc : str, default ""
+            How the chop-ID image was made, written in a corner of its panel.
 
         Returns
         -------
@@ -431,7 +433,7 @@ class LiveView:
             The top-row panels are cleared and redrawn at the next redraw.
         """
         self._round = {"tag": tag, "value_name": value_name, "threshold": float(threshold),
-                       "direction": direction, "via_bg": bool(via_bg)}
+                       "direction": direction, "via_bg": bool(via_bg), "desc": str(desc)}
         self._frames = {"num": [], "x": [], "y": [], "code": [], "value": []}
         self._skipped = 0
         self._raw = None
@@ -470,26 +472,31 @@ class LiveView:
         self._skipped += int(skipped)
         self._mark("states")
 
-    def show_raw(self, img: np.ndarray, star: Sequence[float], chop: str, label: str) -> None:
-        """Show a raw frame's crude star image with its detected star.
+    def show_chop_image(self, img: np.ndarray, star: Sequence[float], chop: str, label: str,
+                        via_bg: bool = False) -> None:
+        """Show the image a frame's chop state was decided from, with its detected star.
 
         Parameters
         ----------
         img : ndarray, shape (ny, nx)
-            The frame minus its 20-px boxcar, 2x2 binned, where (ny, nx) = (256, 256).
+            The crude star image of ``combine.crude_star_image`` (zeros where masked), or with
+            ``via_bg`` the rolling-background-subtracted frame; (ny, nx) = (512, 512).
         star : sequence of float
-            ``(x, y)`` of the detected star in ``img`` pixels.
+            ``(x, y)`` of the detected star in pixels.
         chop : str
             The frame's chop state, ``CHOP_A`` or ``CHOP_B``.
         label : str
             Frame number, shown in the panel title.
+        via_bg : bool, default False
+            True when the stripe-mean change decided the chop state; the stripe region (rows
+            126-130, columns 50-100) is outlined.
 
         Returns
         -------
         None
             The panel is redrawn at the next redraw.
         """
-        self._raw = (np.asarray(img), tuple(star), str(chop), str(label))
+        self._raw = (np.asarray(img), tuple(star), str(chop), str(label), bool(via_bg))
         self._mark("raw")
 
     def show_segments(self, lengths: Sequence[int]) -> None:
@@ -590,25 +597,46 @@ class LiveView:
         return tuple(a[order] for a in out)
 
     def _draw_raw(self) -> None:
-        """Draw the raw-frame panel.
+        """Draw the chop-ID image panel.
 
         Returns
         -------
         None
-            The panel is drawn from the last ``show_raw`` data.
+            The panel is drawn from the last ``show_chop_image`` data: masked pixels in navy, a
+            square-root stretch from the 1st percentile to the star's peak, and the detected
+            star circled; with ``via_bg`` a percentile stretch and the stripe region outlined.
         """
+        from matplotlib.colors import PowerNorm
+        from matplotlib.patches import Rectangle
         a = self.ax["raw"]
         a.clear()
         if self._raw is None:
-            self._empty(a, "Raw Frame", "Waiting for the first frames")
+            self._empty(a, "Chop-ID Image", "Waiting for the first frames")
             return
-        img, star, chop, label = self._raw
-        vmin, vmax = _stretch(img)
-        a.imshow(img, origin="lower", cmap=_cmap("gray"), vmin=vmin, vmax=vmax, interpolation="nearest")
-        a.plot([star[0]], [star[1]], "o", mfc="none", mec="red", ms=14, mew=1.5)
-        a.set_title(f"Raw Frame {label}, Chop {chop[-1]}")
-        a.set_xlabel("X (2x2-Binned Pixels)")
-        a.set_ylabel("Y (2x2-Binned Pixels)")
+        img, star, chop, label, via_bg = self._raw
+        if via_bg:
+            vmin, vmax = _stretch(img)
+            a.imshow(img, origin="lower", cmap=_cmap("gray"), vmin=vmin, vmax=vmax, interpolation="nearest")
+            a.add_patch(Rectangle((49.5, 125.5), 51, 5, fill=False, ec="cyan", lw=1.0))
+            a.set_title(f"Chop-ID Frame {label}, Chop {chop[-1]} (Stripe Mean)")
+        else:
+            # masked pixels are zero, or within rounding of zero after the boxcar's running sums
+            scale = float(np.nanmax(np.abs(img))) if np.any(np.isfinite(img)) else 0.0
+            shown = np.where(np.abs(img) <= 1e-9 * scale, np.nan, img)
+            v = shown[np.isfinite(shown)]
+            if v.size:
+                vmin = float(np.percentile(v, 1))
+                vmax = float(np.nanmax(shown))
+                vmax = vmax if vmax > vmin else vmin + 1.0
+                a.imshow(shown, origin="lower", cmap=_cmap("gray"), interpolation="nearest",
+                         norm=PowerNorm(gamma=0.5, vmin=vmin, vmax=vmax))
+            a.plot([star[0]], [star[1]], "o", mfc="none", mec="red", ms=14, mew=1.5)
+            a.set_title(f"Chop-ID Image {label}, Chop {chop[-1]}")
+        if self._round.get("desc"):
+            a.text(0.01, 0.01, self._round["desc"], transform=a.transAxes, fontsize=7, color="white",
+                   va="bottom", ha="left", bbox={"facecolor": "black", "alpha": 0.5, "pad": 1.5, "lw": 0})
+        a.set_xlabel("X (Pixels)")
+        a.set_ylabel("Y (Pixels)")
 
     def _draw_states(self) -> None:
         """Draw the star-position and chop-decision panels.
@@ -1137,12 +1165,12 @@ class Display:
             _SERVER["q"].put((name, args))
 
     def start_round(self, tag: str, value_name: str, threshold: float, direction: str,
-                    via_bg: bool = False) -> None:
+                    via_bg: bool = False, desc: str = "") -> None:
         """Start the chop-identification panels afresh for a new round (``LiveView.start_round``).
 
         Parameters
         ----------
-        tag, value_name, threshold, direction, via_bg
+        tag, value_name, threshold, direction, via_bg, desc
             As for ``LiveView.start_round``.
 
         Returns
@@ -1150,7 +1178,7 @@ class Display:
         None
             The call is sent to the display process.
         """
-        self._send("start_round", tag, value_name, float(threshold), direction, bool(via_bg))
+        self._send("start_round", tag, value_name, float(threshold), direction, bool(via_bg), str(desc))
 
     def add_states(self, nums: Sequence[int], xs: Sequence[int], ys: Sequence[int], chops: Sequence[str],
                    values: Sequence[float], skipped: int = 0) -> None:
@@ -1169,20 +1197,22 @@ class Display:
         self._send("add_states", np.asarray(nums, np.int64), np.asarray(xs, np.float32),
                    np.asarray(ys, np.float32), [str(c) for c in chops], np.asarray(values, np.float64), int(skipped))
 
-    def show_raw(self, img: np.ndarray, star: Sequence[float], chop: str, label: str) -> None:
-        """Show a raw frame's crude star image with its detected star (``LiveView.show_raw``).
+    def show_chop_image(self, img: np.ndarray, star: Sequence[float], chop: str, label: str,
+                        via_bg: bool = False) -> None:
+        """Show the image a frame's chop state was decided from (``LiveView.show_chop_image``).
 
         Parameters
         ----------
-        img, star, chop, label
-            As for ``LiveView.show_raw``.
+        img, star, chop, label, via_bg
+            As for ``LiveView.show_chop_image``.
 
         Returns
         -------
         None
             The call is sent to the display process.
         """
-        self._send("show_raw", np.asarray(img, np.float32), tuple(float(v) for v in star), str(chop), str(label))
+        self._send("show_chop_image", np.asarray(img, np.float32), tuple(float(v) for v in star), str(chop),
+                   str(label), bool(via_bg))
 
     def show_segments(self, lengths: Sequence[int]) -> None:
         """Show the histogram of frames per segment (``LiveView.show_segments``).

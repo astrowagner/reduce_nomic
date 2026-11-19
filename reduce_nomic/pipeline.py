@@ -21,7 +21,7 @@ from astropy.io import fits
 
 from . import binning, chopsub, combine, geometry, idl, select
 from .config import Settings
-from .frames import RawFrame, list_raw, read_frame, select_science_frames
+from .frames import RawFrame, list_raw, select_science_frames
 
 
 def log(msg: str) -> None:
@@ -154,23 +154,19 @@ def _states_task(args) -> List[combine.FrameState]:
     states : list of FrameState
         The block's frame states.
     thumb : tuple or None
-        For the display: the last kept frame's high-passed image (2x2 binned), its star
-        position in that image, its chop state and frame number; None without ``display``.
+        For the display, from the block's last frame under the background limit: its crude star
+        image (the image its position was taken from) and its rolling-background-subtracted
+        frame, both shape (512, 512) float32, its star position in pixels, and its frame number;
+        None without ``display`` or when no frame is under the limit.
     """
     tag, lo, hi, init_bg, badmap, st = args
-    states = combine.frame_states(_FILES[tag], lo, hi, init_bg, badmap, st)
+    images = {} if st.get("display") else None
+    states = combine.frame_states(_FILES[tag], lo, hi, init_bg, badmap, st, images=images)
     thumb = None
-    if st.get("display"):
-        good = [s for s in states if s.star_x >= 0]
-        if good:
-            s = good[-1]
-            data = read_frame(_FILES[tag][s.pos].path)[0]
-            img = (data - idl.smooth(data, 20)).reshape(256, 2, 256, 2).mean(axis=(1, 3))
-            if st["chop_direction"] == "LEFT-RIGHT":
-                chop = "CHOP_A" if s.star_x < 256 else "CHOP_B"
-            else:
-                chop = "CHOP_A" if s.star_y < 256 else "CHOP_B"
-            thumb = (img.astype(np.float32), (s.star_x / 2.0, s.star_y / 2.0), chop, f"{s.num}")
+    if images and "last" in images:
+        pos, img, bsub = images["last"]
+        s = states[pos - lo]
+        thumb = (img.astype(np.float32), bsub.astype(np.float32), (float(s.star_x), float(s.star_y)), f"{s.num}")
     return states, thumb
 
 
@@ -330,7 +326,8 @@ def _chop_feed(disp, st: Dict, sky_round: bool, tag: str):
         ``show(result)`` for each ``_states_task`` result, in order: adds the block's frames
         (frame number, star position, chop state, and the value that decided it: the star's x
         or y in pixels, or with ``set_chop_via_bg`` the stripe mean minus the previous kept
-        frame's) and shows the block's raw-frame thumbnail with its chop state.
+        frame's) and shows the block's last chop-ID image with its chop state: the crude star
+        image, or with ``set_chop_via_bg`` the rolling-background-subtracted frame.
     """
     eff = dict(st)
     if sky_round:
@@ -338,9 +335,12 @@ def _chop_feed(disp, st: Dict, sky_round: bool, tag: str):
     via_bg = bool(eff["set_chop_via_bg"])
     lr = st["chop_direction"] == "LEFT-RIGHT"
     if via_bg:
-        disp.start_round(tag, "Stripe Mean Change (ADU)", 0.0, st["chop_direction"], via_bg=True)
+        disp.start_round(tag, "Stripe Mean Change (ADU)", 0.0, st["chop_direction"], via_bg=True,
+                         desc="rolling background subtracted; stripe rows 126-130 decide")
     else:
-        disp.start_round(tag, f"{'X' if lr else 'Y'} of Detected Star (Pixels)", 256.0, st["chop_direction"])
+        desc = "rolling background, " + ("destriped, " if st.get("chopid_destripe") else "") + "masked, 7-px boxcar"
+        disp.start_round(tag, f"{'X' if lr else 'Y'} of Detected Star (Pixels)", 256.0, st["chop_direction"],
+                         desc=desc)
     prevmean = [0.0]
     first: List[Optional[int]] = [None]
 
@@ -374,9 +374,9 @@ def _chop_feed(disp, st: Dict, sky_round: bool, tag: str):
             ys.append(q.star_y)
             vals.append(val)
         disp.add_states(nums, xs, ys, chops, vals, skipped=len(sts) - len(nums))
-        if thumb is not None:
-            img, star, chop, label = thumb
-            disp.show_raw(img, star, chops[-1] if chops else chop, label)
+        if thumb is not None and chops:
+            img, bsub, star, label = thumb
+            disp.show_chop_image(bsub if via_bg else img, star, chops[-1], label, via_bg)
 
     return show
 

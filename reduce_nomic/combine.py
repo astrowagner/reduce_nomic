@@ -9,7 +9,7 @@ parallel.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence
 
 import numpy as np
@@ -54,6 +54,19 @@ def make_badmap(master: np.ndarray, badtest: np.ndarray, sigthresh: float = 2.0,
     ny, nx = a.shape
 
     def box_sums(lo_off: int, hi_off: int):
+        """Sum the test frame and its square over a box around every pixel, clipped at the edges.
+
+        Parameters
+        ----------
+        lo_off, hi_off : int
+            Box extent relative to each pixel, the same in x and y (inclusive), in pixels.
+
+        Returns
+        -------
+        n, t1, t2 : ndarray, shape (ny, nx)
+            Pixel count, sum and sum of squares of each pixel's box, where (ny, nx) is the
+            test frame's shape.
+        """
         s1 = np.zeros((ny + 1, nx + 1))
         s2 = np.zeros((ny + 1, nx + 1))
         s1[1:, 1:] = a.cumsum(0).cumsum(1)
@@ -81,6 +94,41 @@ def make_badmap(master: np.ndarray, badtest: np.ndarray, sigthresh: float = 2.0,
     return bm
 
 
+def destripe_rows(img: np.ndarray, st: Dict) -> np.ndarray:
+    """Subtract from each row of each channel half its median over the columns the chop ID uses.
+
+    Removes the horizontal stripes and channel-edge offsets that the rolling background leaves,
+    so that the maximum of the chop-ID image falls on the star and not on a stripe. The halves
+    are x < 256 and x >= 256 (the detector's channel boundary); the medians skip the border
+    columns (x < 21 and x >= 490) and, with ``block_stripe``, the blocked columns 245-330. The
+    star covers about a tenth of a half-row, so it barely moves the medians.
+
+    Parameters
+    ----------
+    img : ndarray, shape (512, 512)
+        Rolling-background-subtracted frame, indexed ``[y, x]``.
+    st : dict
+        Setting ``block_stripe``.
+
+    Returns
+    -------
+    out : ndarray, shape (512, 512)
+        The destriped frame (a new array).
+
+    Notes
+    -----
+    Not in the IDL predecessor, which has a commented-out ``destripe`` call at this point; it is
+    applied when ``chopid_destripe`` is set (the default) and only to the image whose maximum
+    gives the star position, not to the stripe-mean image of ``set_chop_via_bg``.
+    """
+    hl = 245 if st["block_stripe"] else 256
+    lr = 331 if st["block_stripe"] else 256
+    out = np.array(img, dtype=np.float64, copy=True)
+    out[:, :256] -= np.median(img[:, 21:hl], axis=1)[:, None]
+    out[:, 256:] -= np.median(img[:, lr:490], axis=1)[:, None]
+    return out
+
+
 def crude_star_image(frame: np.ndarray, bg: np.ndarray, badmap: np.ndarray, st: Dict) -> np.ndarray:
     """Return the background-subtracted, masked image in which the star is looked for.
 
@@ -94,7 +142,8 @@ def crude_star_image(frame: np.ndarray, bg: np.ndarray, badmap: np.ndarray, st: 
         Bad-pixel map (1 good, 0 bad).
     st : dict
         Settings: ``bg_sub``, ``block_right``, ``block_stripe``, ``double_sided``, ``block_extra``,
-        ``side``, ``sx_top``, ``dx_bottom``, ``block_bad_channel``, ``set_chop_via_bg``.
+        ``side``, ``sx_top``, ``dx_bottom``, ``block_bad_channel``, ``set_chop_via_bg``, and
+        ``chopid_destripe`` (``destripe_rows`` before the masks; absent means off).
 
     Returns
     -------
@@ -105,7 +154,7 @@ def crude_star_image(frame: np.ndarray, bg: np.ndarray, badmap: np.ndarray, st: 
     bframe = frame - idl.smooth(frame, 20)
     b = bframe - bg if st["bg_sub"] else bframe
     first = b.copy()
-    b = b.copy()
+    b = destripe_rows(b, st) if st.get("chopid_destripe") else b.copy()
     if st["block_right"]:
         b[:, 250:512] = 0.0
     b[:, 0:21] = 0.0
@@ -203,7 +252,7 @@ def initial_background(files: Sequence[RawFrame]) -> Dict[str, np.ndarray]:
 
 
 def frame_states(files: Sequence[RawFrame], lo: int, hi: int, init_bg: np.ndarray,
-                 badmap: np.ndarray, st: Dict) -> List[FrameState]:
+                 badmap: np.ndarray, st: Dict, images: Optional[Dict] = None) -> List[FrameState]:
     """Find the crude star position of frames ``lo..hi-1`` of a round.
 
     Parameters
@@ -219,6 +268,11 @@ def frame_states(files: Sequence[RawFrame], lo: int, hi: int, init_bg: np.ndarra
     st : dict
         Settings used by ``crude_star_image`` plus ``rolling_background``, ``nbg``,
         ``background_limit``.
+    images : dict, optional
+        When given, receives ``images["last"] = (pos, img, bsub)`` for the last frame of the
+        block under the background limit: its position, the crude star image its position was
+        taken from, and its rolling-background-subtracted frame (``f - smooth(f, 20)`` minus the
+        background, before any destriping or mask), both shape (512, 512). For the display.
 
     Returns
     -------
@@ -233,6 +287,18 @@ def frame_states(files: Sequence[RawFrame], lo: int, hi: int, init_bg: np.ndarra
     cache: Dict[int, np.ndarray] = {}
 
     def bframe(i: int) -> np.ndarray:
+        """Return frame i minus its 20-px boxcar, read once and cached.
+
+        Parameters
+        ----------
+        i : int
+            Position in the file list.
+
+        Returns
+        -------
+        hp : ndarray, shape (512, 512)
+            The high-passed frame; cached frames more than 2 nbg + 2 positions back are dropped.
+        """
         if i not in cache:
             r = read_frame(files[i].path)[0]
             cache[i] = r - idl.smooth(r, 20)
@@ -241,9 +307,22 @@ def frame_states(files: Sequence[RawFrame], lo: int, hi: int, init_bg: np.ndarra
         return cache[i]
 
     def rolling(i: int) -> np.ndarray:
+        """Return the rolling background of position i.
+
+        Parameters
+        ----------
+        i : int
+            Position in the file list, with nbg positions on each side.
+
+        Returns
+        -------
+        bg : ndarray, shape (512, 512)
+            Per-pixel minimum of ``bframe`` over the nbg positions on each side of i.
+        """
         return np.min([bframe(i - k) for k in range(1, nbg + 1)] + [bframe(i + k) for k in range(1, nbg + 1)], axis=0)
 
     last_bg = None
+    last_kept = None
     out = []
     for i in range(lo, hi):
         data, head = read_frame(files[i].path)
@@ -264,7 +343,12 @@ def frame_states(files: Sequence[RawFrame], lo: int, hi: int, init_bg: np.ndarra
             j = int(np.argmax(img))
             s.star_y, s.star_x = divmod(j, img.shape[1])
             s.stripe = float(img[126:131, 50:101].mean())
+            last_kept = (i, data, bg, img)
         out.append(s)
+    if images is not None and last_kept is not None:
+        i, data, bg, img = last_kept
+        highpass = data - idl.smooth(data, 20)
+        images["last"] = (i, img, highpass - bg if st["bg_sub"] else highpass)
     return out
 
 

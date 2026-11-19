@@ -33,6 +33,14 @@ These quirks change results, so the port keeps them by default:
 
 **`fix_pa`.** On the five nights that set it (β UMa_5, β UMa_6, Procyon_7–9), the port recomputes the parallactic angle from DATE-OBS and TIME-END with astropy's mean sidereal time and IDL `parangle`'s formula. IDL's `ct2lst` takes the local hour and the time zone, which gives back the same UTC instant, so the two agree to well under a second of sidereal time.
 
+**Chop-ID destriping** (`chopid_destripe`, on by default). Before the masks, the port subtracts from each row of the chop-identification image its median over each channel half (x < 256 and x ≥ 256, skipping the border and blocked columns). This removes the horizontal stripes and channel-edge offsets that the rolling background leaves. The IDL predecessor has a commented-out `destripe` call at this point. The stripe-mean image of `set_chop_via_bg` is not destriped. `--set chopid_destripe=0` reproduces the IDL chop identification exactly.
+
+On 1,600 sampled Procyon_13 frames (40 blocks of 20 over the night, both apertures):
+- **Positions:** 1,550 star positions are unchanged and 33 move by 1 px. Seven move by 2–4 px, mostly in y, from y ≈ 140 next to the channel-edge rows to the star's center at y ≈ 142–143.
+- **Labels:** every chop label is the same.
+- **Not fixed:** the 10 frames of an SX excursion near frame 91,700 stay wrong. Their star sat at y ≈ 205–225, in the rows the double-sided mask blanks for SX, so no star was in the searched region at all.
+- **Contrast:** the star's peak over the image's robust noise rises from about 140 to about 500 (SX) and from about 240 to about 620 (DX).
+
 **Pauses.** No step pauses for a key (`hak`). `checksky` logs a warning instead of pausing.
 
 **Overwrites.** Outputs go to `reduced_py/`, and existing files are never overwritten. IDL deletes and rewrites `chop/` and `reduced/`.

@@ -41,13 +41,16 @@ def _feed(d):
         Every panel has data.
     """
     rng = np.random.default_rng(1)
-    d.start_round("left_round0", "Y of Detected Star (Pixels)", 256.0, "UP-DOWN")
+    d.start_round("left_round0", "Y of Detected Star (Pixels)", 256.0, "UP-DOWN", desc="rolling background, destriped")
     for b in range(5):
         nums = np.arange(200 * b, 200 * b + 200)
         chop_a = (nums // 6) % 2 == 0
         ys = np.where(chop_a, 192, 320)
         d.add_states(nums, np.full(200, 150), ys, np.where(chop_a, "CHOP_A", "CHOP_B"), ys.astype(float), skipped=3)
-        d.show_raw(rng.normal(size=(256, 256)), (75.0, 96.0), "CHOP_A", str(nums[-1]))
+        img = np.zeros((512, 512))
+        img[21:190, 21:245] = rng.normal(size=(169, 224))
+        img[140:150, 135:145] += 50.0
+        d.show_chop_image(img, (140.0, 145.0), "CHOP_A", str(nums[-1]), via_bg=(b == 4))
         d.show_progress("left_round0 chop states", b + 1, 5, 10.0 * (b + 1), 10.0 * (4 - b))
     d.show_segments(np.full(166, 6))
     d.show_chopsub(rng.normal(size=(512, 512)), rng.normal(size=(512, 512)), "segment 165")
