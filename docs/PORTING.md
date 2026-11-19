@@ -77,6 +77,11 @@ On 1,600 sampled Procyon_13 frames (40 blocks of 20 over the night, both apertur
   - The median-PSF cores (64×64) correlate at 0.9965 (chop A) and 0.9978 (chop B) with the IDL full-night PSFs.
   - Gaussian FWHM: 20.8 and 19.1 px in the port, against 21.9 and 20.0 px in IDL. The port's are sharper, as expected from 10 s of data against a whole night.
 
+**Pre-clean noise (2026-11-19, Procyon_13 SX, chop-subtracted frames of a full run with 76af6e7).** The noise of the pre-clean is the standard deviation of every finite pixel of the centered 2 radius crop outside the 100 columns centered on the star (the split stage has also blanked a 30-pixel disk at the negative chop image). Measured on the chop-subtracted frames before any shift (`tools/noise_sawtooth.py`, `tools/analyze_noise_sawtooth.py`), over segments 30,000–31,999:
+- **Sawtooth:** it climbs by about 15–20 % of its median and drops at once every 300 frames (≈33 s at 0.1098 s per frame), in both chops at the same frame, with one extra drop between. The chop alternates without a slip throughout.
+- **Not from the alignment:** `fshift` by (0.5, 0.5) px changes it by 0.3 %, so it is dominated by spatially correlated background structure, not pixel noise.
+- **Reading:** it follows the chop-subtracted background residual between the chop re-syncs, and it reaches KLIP-TPE through the frame tags.
+
 **Still to do.** Reduce full nights on patrick and compare with the IDL products: frame counts, angles, the median PSF, and the frames kept by the selection.
 
-**Memory.** A worker holds one chunk of up to 1000 frames (1 GB) plus one chop's cut cube (up to about 2 GB at radius 500). Plan about 4 GB per worker.
+**Memory.** A split-to-pre-bin task reads only its chop's frames of the chunk (up to about 500 frames, 0.5 GB) and cuts them into a float32 cube (up to about 2 GB at radius 500). It aligns, centers and peak-scales that cube in place, bins the kept frames by index, and takes each bin's median a block of 128 rows at a time. Its peak is about m × ((2 radius)² + 512²) × 4 bytes + 0.5 GB, where m is the chop's frame count in the chunk: 2.5 GB for a full chunk at radius 500. `tools/bench_chunk.py` measured 0.87 GB at m = 120 and 1.33 GB at m = 230, against 2.59 GB and 3.51 GB before (2347270). The products are bit-identical: all 24 products of a synthetic night, with frames rejected by the pre-clean (`tools/compare_versions.py`), and every output of a 230-frame chunk task (`tools/bench_chunk.py --compare`). The stage caps its workers at 75 % of `MemAvailable` (`pipeline._mem_workers`).

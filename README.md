@@ -42,7 +42,7 @@ reduce-nomic Procyon_17 --workers 16 --display        # live view (pip install -
 | `binning` | `do_pre_binning`, `do_replace` | Median bins of `prebin` frames, `fixpix` of interior NaNs |
 | `idl` | helper routines | `smooth`, `median`, `fshift`, `crosscorr`, `cntrd`, `fixpix`, `sfit`, `psf_gaussian` |
 
-**Parallelism.** Blocks of frames, segments and chunks of `frame_limit` frames run in parallel worker processes (`--workers`).
+**Parallelism.** Blocks of frames, segments and chunks of `frame_limit` frames run in parallel worker processes (`--workers`). Each worker uses one core, so the worker count sets the speed. A split-to-pre-bin task takes about 2.5 GB at radius 500 (see `docs/PORTING.md`), and that stage lowers its worker count, with a log line, when the workers would need more than 75 % of the memory available. On patrick (96 cores, 384 GB), `--workers 64` leaves a third of the cores free.
 
 **Frame selection.** Frames are selected by frame number. An IDL position cut is translated through the archive's sorting log, as `docs/PORTING.md` explains.
 

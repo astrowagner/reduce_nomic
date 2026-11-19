@@ -44,6 +44,41 @@ def log(msg: str) -> None:
 _FILES: Dict[str, List[RawFrame]] = {}
 
 
+CHUNK_TASK_FIXED = 0.5 * 2 ** 30    # memory of a chunk task beyond its frames, bytes (tools/bench_chunk.py)
+MEM_FRACTION = 0.75                 # share of the available memory the workers of a stage may use
+
+
+def _mem_workers(workers: int, per_task: float, label: str) -> int:
+    """Cap a stage's worker count so that its tasks fit in the memory available.
+
+    Parameters
+    ----------
+    workers : int
+        Requested worker processes.
+    per_task : float
+        Estimated peak memory of one task, in bytes.
+    label : str
+        Stage name, for the log line.
+
+    Returns
+    -------
+    n : int
+        ``workers``, or the largest count whose tasks fit in ``MEM_FRACTION`` of
+        ``MemAvailable`` (``/proc/meminfo``, read now), and at least 1; ``workers`` when
+        ``/proc/meminfo`` cannot be read. A reduced count is logged.
+    """
+    try:
+        with open("/proc/meminfo") as fh:
+            avail = next(int(line.split()[1]) * 1024 for line in fh if line.startswith("MemAvailable:"))
+    except (OSError, StopIteration, ValueError, IndexError):
+        return workers
+    n = max(1, min(workers, int(MEM_FRACTION * avail // max(per_task, 1.0))))
+    if n < workers:
+        log(f"{label}: {n} worker{'s' if n > 1 else ''} instead of {workers}, so that {per_task / 2 ** 30:.1f} GB per task fits in "
+            f"{100 * MEM_FRACTION:.0f} % of the {avail / 2 ** 30:.0f} GB of memory available")
+    return n
+
+
 def _run(fn, tasks: Sequence, workers: int, label: str = "", on_result=None, disp=None,
          sizes: Optional[Sequence[int]] = None, unit: str = "tasks") -> List:
     """Map ``fn`` over ``tasks`` in forked worker processes, keeping the order, with progress.
@@ -259,16 +294,26 @@ def _chunk_task(args) -> Dict:
     -------
     res : dict
         ``binned``, ``angles``, ``exptimes`` (binned), ``coadds`` (kept frames, unbinned, as IDL
-        saves them), and diagnostics: frame counts, bad frames, alignment shifts, center, and
-        for the display ``thumb``, the median of the centered frames' central 200x200 pixels.
+        saves them), and diagnostics: frame counts, bad frames, alignment shifts, center, the
+        pre-clean's ``corrs``, ``noises`` and ``peaks``, and for the display ``thumb``, the
+        median of the centered frames' central 200x200 pixels.
+
+    Notes
+    -----
+    Only the frames of this chop position are read from the memmap. The cut cube (float32) is
+    aligned, centered and peak-scaled in place, and the kept frames are binned by index
+    (``binning.prebin``), so a task's peak memory is about m x ((2 radius)^2 + 512^2) x 4 bytes
+    plus 0.5 GB, where m is the number of frames of this chop in the chunk (``CHUNK_TASK_FIXED``).
     """
     c, lo, hi, cn, pos_raw, pos_cut, path, n, chops, angles, coadds, exptimes, st = args
     which = "CHOP_A" if cn == 1 else "CHOP_B"
-    mm = np.memmap(path, dtype=np.float32, mode="r", shape=(n, 512, 512))
-    frames = np.asarray(mm[lo:hi])
     ch = np.asarray(chops[lo:hi])
     sel_rows = np.nonzero(ch == which)[0]
-    cube = geometry.cut_chop(frames, ch, which, pos_raw, pos_cut, st)
+    mm = np.memmap(path, dtype=np.float32, mode="r", shape=(n, 512, 512))
+    frames = np.asarray(mm[lo + sel_rows])      # only this chop's frames are read
+    del mm
+    cube = geometry.cut_chop(frames, np.full(sel_rows.size, which), which, pos_raw, pos_cut, st)
+    del frames
     ang = np.asarray(angles[lo:hi])[sel_rows]
     coa = np.asarray(coadds[lo:hi])[sel_rows]
     exp = np.asarray(exptimes[lo:hi])[sel_rows]
@@ -288,9 +333,9 @@ def _chunk_task(args) -> Dict:
     if sel.keep.size == 0:
         res.update(binned=None, angles=[], exptimes=[], coadds=[])
         return res
-    kept = select.peak_scaled(centered) if st["pre_peak_scale"] else centered
-    kept = kept[sel.keep]
-    b, ab, eb = binning.prebin(kept, ang[sel.keep], exp[sel.keep], st)
+    if st["pre_peak_scale"]:                     # select.peak_scaled, in place to save memory
+        centered /= np.nanmax(centered, axis=(1, 2))[:, None, None]
+    b, ab, eb = binning.prebin(centered, ang[sel.keep], exp[sel.keep], st, index=sel.keep)
     res.update(binned=b.astype(np.float32), angles=ab.tolist(), exptimes=eb.tolist(), coadds=coa[sel.keep].tolist())
     return res
 
@@ -764,7 +809,9 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
     st_tasks.pop("_disp", None)
     tasks = [t[:-1] + (st_tasks,) for t in tasks]
     sizes = [sum(1 for c in chops[t[1]:t[2]] if c == ("CHOP_A" if t[3] == 1 else "CHOP_B")) for t in tasks]
-    results = _run(_chunk_task, tasks, workers, f"{side} split, align, center, pre-clean", show, disp,
+    label = f"{side} split, align, center, pre-clean"
+    per_task = max(sizes, default=0) * ((2 * int(st["radius"])) ** 2 + 512 * 512) * 4 + CHUNK_TASK_FIXED
+    results = _run(_chunk_task, tasks, _mem_workers(workers, per_task, label), label, show, disp,
                    sizes=sizes, unit="frames")
     write_fits(os.path.join(out_dir, f"{pre}_badmap.fits"), badmap)
     summary = {"night": night, "side": side, "settings_source": settings.source, "n_raw": len(sci),
