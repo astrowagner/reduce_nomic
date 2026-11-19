@@ -111,3 +111,28 @@ def test_work_lock_refuses_second_run(tmp_path):
     st = load_settings("Fake_1", nights_json=str(tmp_path / "none.json"), overrides={"archive": root, "obj": "fakestar"})
     with pytest.raises(RuntimeError, match="another run"):
         reduce(st, "left", workers=1, out_dir=str(tmp_path / "out"), work_dir=str(work))
+
+
+def test_display_changes_no_product(tmp_path, monkeypatch):
+    """Check that the products are bit-identical with and without the live display."""
+    import glob
+    monkeypatch.delenv("DISPLAY", raising=False)
+    root = str(tmp_path / "archive")
+    make_night(root, n=240)
+    outs = {}
+    for disp in (False, True):
+        over = {"archive": root, "obj": "fakestar", "prebin": 5, "background_limit": 50000.0, "display": disp}
+        for cn in (1, 2):
+            for pre in ("pre_", ""):
+                over.update({f"{pre}corr_thresh_{cn}": 0.5, f"{pre}noise_thresh_{cn}": 3, f"{pre}peak_thresh_{cn}": 0.5})
+        st = load_settings("Fake_1", nights_json=str(tmp_path / "none.json"), overrides=over)
+        outs[disp] = str(tmp_path / f"out_display_{disp}")
+        reduce(st, "left", workers=2, out_dir=outs[disp])
+    names = sorted(os.path.basename(f) for f in glob.glob(os.path.join(outs[False], "*.fits")))
+    assert len(names) == 9           # badmap, and per chop: cube, two median PSFs, angles
+    for name in names:
+        a = fits.getdata(os.path.join(outs[False], name))
+        b = fits.getdata(os.path.join(outs[True], name))
+        assert a.shape == b.shape and np.array_equal(a, b, equal_nan=True), name
+    for f in glob.glob(os.path.join(outs[False], "*.csv")):
+        assert open(f).read() == open(os.path.join(outs[True], os.path.basename(f))).read(), f

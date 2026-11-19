@@ -13,7 +13,7 @@ import json
 import multiprocessing as mp
 import os
 import time
-from dataclasses import asdict
+import warnings
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -60,7 +60,8 @@ def _run(fn, tasks: Sequence, workers: int, label: str = "", on_result=None, dis
     on_result : callable, optional
         Called as ``on_result(result)`` in this process as each result arrives, in order.
     disp : Display, optional
-        Live display whose progress panel is updated.
+        Live display whose progress strip is updated; while the next result is awaited its
+        window events are processed every 0.2 s (``Display.pump``).
 
     Returns
     -------
@@ -76,6 +77,19 @@ def _run(fn, tasks: Sequence, workers: int, label: str = "", on_result=None, dis
     out: List = []
 
     def progress(done: int) -> None:
+        """Report progress after ``done`` results.
+
+        Parameters
+        ----------
+        done : int
+            Results received so far.
+
+        Returns
+        -------
+        None
+            The display's progress strip is updated; a log line is printed at most every 10 s
+            and at the end.
+        """
         el = time.time() - t0
         eta = el / done * (n - done) if done else None
         if disp is not None:
@@ -86,6 +100,18 @@ def _run(fn, tasks: Sequence, workers: int, label: str = "", on_result=None, dis
             log(f"{label}: {done}/{n} ({100.0 * done / max(n, 1):.0f} %), {el / 60:.1f} min elapsed{left}")
 
     def handle(r) -> None:
+        """Keep one result, pass it to ``on_result`` and report progress.
+
+        Parameters
+        ----------
+        r : object
+            The next result, in task order.
+
+        Returns
+        -------
+        None
+            ``r`` is appended to the results.
+        """
         out.append(r)
         if on_result is not None:
             on_result(r)
@@ -95,8 +121,21 @@ def _run(fn, tasks: Sequence, workers: int, label: str = "", on_result=None, dis
         for t in tasks:
             handle(fn(t))
         return out
-    with mp.get_context("fork").Pool(min(workers, n)) as pool:
-        for r in pool.imap(fn, tasks, chunksize=1):
+    with warnings.catch_warnings():
+        # The only other thread here is the feeder thread of the display queue
+        # (display.Display); the workers never use its locks, so forking past it is safe.
+        warnings.filterwarnings("ignore", message=r"This process .* is multi-threaded",
+                                category=DeprecationWarning)
+        pool = mp.get_context("fork").Pool(min(workers, n))
+    with pool:
+        it = pool.imap(fn, tasks, chunksize=1)
+        for _ in range(n):
+            while True:
+                try:
+                    r = it.next(timeout=0.2) if disp is not None else it.next()
+                    break
+                except mp.TimeoutError:
+                    disp.pump()
             handle(r)
     return out
 
@@ -236,7 +275,9 @@ def _chunk_task(args) -> Dict:
     if st.get("display") and centered.shape[0]:
         r = int(st["radius"])
         step = max(1, centered.shape[0] // 50)
-        res["thumb"] = np.nanmedian(centered[::step, r - 100:r + 100, r - 100:r + 100], axis=0).astype(np.float32)
+        with warnings.catch_warnings():     # NaN channel-edge rows: all-NaN columns are expected
+            warnings.simplefilter("ignore", RuntimeWarning)
+            res["thumb"] = np.nanmedian(centered[::step, r - 100:r + 100, r - 100:r + 100], axis=0).astype(np.float32)
     if sel.keep.size == 0:
         res.update(binned=None, angles=[], exptimes=[], coadds=[])
         return res
@@ -263,6 +304,81 @@ def _blocks(n: int, size: int) -> List[Tuple[int, int]]:
         ``(lo, hi)`` pairs covering 0..n-1.
     """
     return [(lo, min(lo + size, n)) for lo in range(0, n, size)]
+
+
+def _chop_feed(disp, st: Dict, sky_round: bool, tag: str):
+    """Start a round on the display and return the callback that feeds it the chop states.
+
+    The callback labels each frame under the background limit with ``combine.chop_label``, in
+    file order and with the settings ``combine.build_segments`` uses (a sky round forces
+    ``set_chop_via_bg``), so the display shows the chop states the segments get.
+
+    Parameters
+    ----------
+    disp : Display
+        Live display.
+    st : dict
+        Settings (``chop_direction``, ``set_chop_via_bg``).
+    sky_round : bool
+        True for rounds 1..n_sky.
+    tag : str
+        Round label.
+
+    Returns
+    -------
+    show : callable
+        ``show(result)`` for each ``_states_task`` result, in order: adds the block's frames
+        (frame number, star position, chop state, and the value that decided it: the star's x
+        or y in pixels, or with ``set_chop_via_bg`` the stripe mean minus the previous kept
+        frame's) and shows the block's raw-frame thumbnail with its chop state.
+    """
+    eff = dict(st)
+    if sky_round:
+        eff["set_chop_via_bg"] = 1
+    via_bg = bool(eff["set_chop_via_bg"])
+    lr = st["chop_direction"] == "LEFT-RIGHT"
+    if via_bg:
+        disp.start_round(tag, "Stripe Mean Change (ADU)", 0.0, st["chop_direction"], via_bg=True)
+    else:
+        disp.start_round(tag, f"{'X' if lr else 'Y'} of Detected Star (Pixels)", 256.0, st["chop_direction"])
+    prevmean = [0.0]
+    first: List[Optional[int]] = [None]
+
+    def show(r) -> None:
+        """Feed one block's chop states and raw-frame thumbnail to the display.
+
+        Parameters
+        ----------
+        r : tuple
+            ``(states, thumb)`` from ``_states_task``.
+
+        Returns
+        -------
+        None
+            ``prevmean`` and ``first`` carry the labeling state to the next block.
+        """
+        sts, thumb = r
+        if first[0] is None and sts:
+            first[0] = sts[0].pos
+        nums, xs, ys, chops, vals = [], [], [], [], []
+        for q in sts:
+            if q.star_x < 0:
+                continue
+            if via_bg:
+                val = q.stripe - (0.0 if q.pos == first[0] else prevmean[0])
+            else:
+                val = float(q.star_x if lr else q.star_y)
+            chops.append(combine.chop_label(q, eff, prevmean, first[0]))
+            nums.append(q.num)
+            xs.append(q.star_x)
+            ys.append(q.star_y)
+            vals.append(val)
+        disp.add_states(nums, xs, ys, chops, vals, skipped=len(sts) - len(nums))
+        if thumb is not None:
+            img, star, chop, label = thumb
+            disp.show_raw(img, star, chops[-1] if chops else chop, label)
+
+    return show
 
 
 def combine_round(files: Sequence[RawFrame], st: Dict, sky_round: bool, master: np.ndarray, work: str,
@@ -298,12 +414,14 @@ def combine_round(files: Sequence[RawFrame], st: Dict, sky_round: bool, master: 
     _FILES[tag] = list(files)
     disp = st.get("_disp")
     st = {k: v for k, v in st.items() if k != "_disp"}
-    tasks = [(tag, lo, hi, init["bg"], badmap, st) for lo, hi in _blocks(len(files), 500)]
-
-    def show(r):
-        if disp is not None and r[1] is not None:
-            disp.show_raw(*r[1])
-
+    # smaller blocks with the display, so the chop identification updates often; each block
+    # rereads up to 2 nbg neighbor frames for its rolling background, so without it larger ones
+    size = 200 if disp is not None else 500
+    tasks = [(tag, lo, hi, init["bg"], badmap, st) for lo, hi in _blocks(len(files), size)]
+    if disp is not None:
+        show = _chop_feed(disp, st, sky_round, tag)
+    else:
+        show = None
     states = [s for part, _ in _run(_states_task, tasks, workers, f"{tag} chop states", show, disp) for s in part]
     angles = None
     if st["fix_pa"]:
@@ -313,6 +431,8 @@ def combine_round(files: Sequence[RawFrame], st: Dict, sky_round: bool, master: 
     segs = [segs[i] for i in order]
     n = len(segs)
     log(f"{tag}: {sum(s.star_x >= 0 for s in states)} frames under the background limit, {n} segments")
+    if disp is not None:
+        disp.show_segments([len(s.positions) for s in segs])
     path = os.path.join(work, f"{tag}_segments.f32")
     np.memmap(path, dtype=np.float32, mode="w+", shape=(max(n, 1), 512, 512)).flush()
     blocks = _blocks(n, 200)
@@ -358,6 +478,18 @@ def chopsub_round(rnd: Dict, badmap: np.ndarray, st: Dict, work: str, tag: str, 
     tasks = [(lo, hi, rnd["seg_path"], path, n, badmap, st, sky_info) for lo, hi in _blocks(n, 250)]
 
     def show(r):
+        """Show one block's last chop-subtracted frame on the display.
+
+        Parameters
+        ----------
+        r : tuple
+            ``(noise, thumb)`` from ``_chopsub_task``.
+
+        Returns
+        -------
+        None
+            The thumbnail, when there is one, goes to ``Display.show_chopsub``.
+        """
         if disp is not None and r[1] is not None:
             disp.show_chopsub(*r[1])
 
@@ -457,8 +589,8 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
     disp = None
     if st.get("display"):
         from .display import Display
-        disp = Display(f"{night} {side}", os.path.join(out_dir, f"{pre}_display.png"))
-        log(f"display: {'window' if disp.backend != 'Agg' else 'PNG ' + disp.png}")
+        disp = Display(f"{night} {side}", os.path.join(out_dir, f"{pre}_display.png"), log=log)
+        log(f"display: {disp.note}")
     st["_disp"] = disp
     start = st["start_frame_left"] if side == "left" else st["start_frame_right"]
     end = st["end_frame_left"] if side == "left" else st["end_frame_right"]
@@ -515,6 +647,19 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
     log(f"science: {n} frames in {len(chunks)} chunks; split, align, center, pre-clean, pre-bin")
 
     def show(r):
+        """Show one chunk's centered median and selection on the display.
+
+        Parameters
+        ----------
+        r : dict
+            Result of ``_chunk_task``.
+
+        Returns
+        -------
+        None
+            The chunk, when it has a thumbnail, goes to ``Display.show_chunk`` with the
+            pre-clean thresholds of its chop.
+        """
         if disp is not None and r.get("thumb") is not None:
             cn = r["cn"]
             disp.show_chunk(r["thumb"], r, {"corr": st[f"pre_corr_thresh_{cn}"],

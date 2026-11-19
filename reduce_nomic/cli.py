@@ -9,9 +9,12 @@ Usage
 NIGHT is the night folder name in the archive (e.g. ``Procyon_17``). Settings come from the IDL
 predecessor's defaults and the night's object block (``config/nights_idl.json``); ``--set``
 overrides any setting by name, with the value parsed as JSON when possible (``--set radius=400
---set sky_dirs='["../Alcor/skys1"]'``). ``--display`` opens a live view of the stages (raw
-frame and star, chop-subtracted frame, centered medians, frame selection, progress), or writes
-it to ``<out>/<night>_<side>_display.png`` when no X display is available; it needs matplotlib.
+--set sky_dirs='["../Alcor/skys1"]'``). ``--display`` opens a live view of the stages (chop
+identification, chop subtraction, frame selection, progress) in a window of the KLIP-TPE live
+window's size, 1850 x 990 pixels, shrunk on a smaller screen; it is redrawn without taking the
+focus, and the final view is written to ``<out>/<night>_<side>_display.png``. With no X display
+the view goes to that PNG only. It is drawn by its own process, so closing the window or losing
+the X connection does not stop the run. It needs matplotlib, and Tk for the window.
 ``--dry-run`` prints the settings and the selected frames and stops. Progress lines with
 estimated remaining time are printed for every stage.
 
@@ -27,7 +30,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from typing import List
 
