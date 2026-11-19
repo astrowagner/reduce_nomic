@@ -29,7 +29,7 @@ These quirks change results, so the port keeps them by default:
 
 **File order.** IDL's `FILE_SEARCH(/nosort)` lists files unsorted on patrick's RAID. The port always sorts by stem and frame number, as the Mac's volume did.
 
-**Random draws.** The center stage takes the median of 100 frames drawn with IDL `randomu`. The port draws with a seeded numpy generator, so its centers differ from IDL's by the scatter between random medians.
+**Random draws.** With `center_method=idl`, the center stage takes the median of 100 frames drawn with IDL `randomu`. The port draws with a seeded numpy generator, so its centers differ from IDL's by the scatter between random medians. The default Gaussian center uses every frame and draws nothing.
 
 **`fix_pa`.** On the five nights that set it (β UMa_5, β UMa_6, Procyon_7–9), the port recomputes the parallactic angle from DATE-OBS and TIME-END with astropy's mean sidereal time and IDL `parangle`'s formula. IDL's `ct2lst` takes the local hour and the time zone, which gives back the same UTC instant, so the two agree to well under a second of sidereal time.
 
@@ -55,6 +55,14 @@ On 1,600 sampled Procyon_13 frames (40 blocks of 20 over the night, both apertur
 - **Rule:** the port measures each frame's peak S/N in the chop-ID image (`combine.chopid_snr`: the maximum over the robust noise of the unmasked pixels). It skips a science-round frame whose S/N is below 0.2× the round's median, as it skips frames over the background limit (`combine.reject_no_star`).
 - **Procyon_13, SX:** about 2,200 frames (~91,700–93,900) have the star at y ≈ 205–225, inside the rows the SX mask blanks. Their maxima sit on hot pixels near (25–45, 91–116), at S/N ~8, or 0.02× the median of ~360. Every frame with the star is at ≥ 0.65× the median. A 5×5 median filter (`chopid_median`, off by default) does not change that separation.
 - **Not applied** with `set_chop_via_bg` or in sky rounds. `--set chopid_nostar_frac=0` reproduces IDL.
+
+**Center stage** (`center_method`, `gauss` by default). The IDL center stage takes the 7-pixel `cntrd` centroid of the chunk's high-passed median (`geometry.idl_center`). On a broad or structured core that centroid locks onto either of two nearly equal local maxima. On Procyon_13 SX (PSF FWHM 17–18 px against 16.5–17 px on DX) the chunks' centroids spread over 3.5 px, against 0.16 px on DX.
+- **Evidence.** On run6's SX bins, the IDL centroid and the core's Gaussian center disagree by 0.87–1.05 px rms (chop A) and 0.37–0.39 px (chop B), against 0.02–0.07 px on DX (`tools/center_estimators.py`). Shifting each SX bin onto its Gaussian center raises its correlation with the median frame (central 64×64) from a median of 0.9931 to 0.9995 (chop A; 5th percentile 0.9756 to 0.9990) and from 0.9978 to 0.9995 (chop B). The DX control rises from 0.9998 to 0.9999.
+- **The port's method.** It fits a circular Gaussian plus constant to the 41×41 core pixels of the median of every frame of the chunk (`geometry.gauss_center`) and shifts the chunk so that center lands at (radius − 0.5, radius − 0.5).
+- **Diagnostics.** The summary records both estimators for every chunk (`centers_idl`, `centers_gauss`; `centers` is the one used).
+- **IDL mode.** `--set center_method=idl` reproduces the IDL stage. With `split_median_frames=1` as well, all 24 products of a synthetic night with pre-clean rejections are identical to b45da09's (`tools/compare_versions.py`).
+
+**Split positions** (`split_median_frames`, 20 by default). The IDL split stage finds the two chop positions of a chunk in its first two frames and checks their order on the first chop-A frame. When a chunk starts with bad frames, the cut is wrong for the whole chunk. The IDL products' broken bins just after Procyon_13's SX excursion (the star 30 px off center or missing) fit this failure, though that was not traced to the chunk boundary. The port finds them in the NaN-ignoring median of up to 20 frames of the same chop from those frames on (`pipeline._start_median`). `--set split_median_frames=1` reproduces the IDL single frames.
 
 **Pauses.** No step pauses for a key (`hak`). `checksky` logs a warning instead of pausing.
 

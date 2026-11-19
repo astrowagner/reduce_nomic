@@ -10,13 +10,12 @@ Positions are in the IDL padded frame (``framew`` x ``framew``, the 512x512 dete
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 from scipy import ndimage as ndi
 
-from . import idl
+from . import binning, idl
 
 
 def padded(frame: np.ndarray, framew: int) -> np.ndarray:
@@ -163,7 +162,6 @@ def cut_chop(frames: np.ndarray, chops: Sequence[str], which: str, pos_raw: Tupl
         the detector are NaN.
     """
     fw, r = int(st["framew"]), int(st["radius"])
-    off = (fw - 512) // 2
     ch = np.asarray(chops)
     sel = np.nonzero(ch == which)[0]
     neg = pos_raw[1] if which == "CHOP_A" else pos_raw[0]
@@ -250,46 +248,159 @@ def align_cube(cube: np.ndarray, st: Dict, ref: Optional[np.ndarray] = None) -> 
     return out, shifts
 
 
-def center_cube(cube: np.ndarray, st: Dict, rng: np.random.Generator, n_draw: int = 100) -> Tuple[np.ndarray, Tuple[float, float]]:
-    """Center an aligned cube on its median star (IDL center stage).
+def idl_center(med: np.ndarray) -> Tuple[float, float]:
+    """Find the star in a median image as the IDL center stage does.
+
+    Parameters
+    ----------
+    med : ndarray, shape (2 h, 2 h)
+        Median of aligned frames around the star, where h is half its size (at least 50).
+
+    Returns
+    -------
+    xc, yc : float
+        The ``cntrd`` centroid (FWHM 7) of the image high-passed by ``smooth(., 25, /nan)``,
+        started at its maximum within 50 px of the image center, in the image's pixels.
+
+    Raises
+    ------
+    RuntimeError
+        When ``cntrd`` fails.
+
+    Notes
+    -----
+    The 7-pixel centroid of the high-passed image can lock onto either of two nearly equal
+    local maxima of a broad or structured core; on Procyon_13 SX it moves the chunks' centers
+    by up to 3.5 px. ``gauss_center`` is the robust alternative.
+    """
+    n = med.shape[0]
+    h = n // 2
+    hp = med - idl.smooth(med, 25, nan=True)
+    yy, xx = np.mgrid[0:n, 0:n]
+    hp[np.hypot(xx - h, yy - h) > 50] = 0.0
+    iy, ix = divmod(int(np.nanargmax(hp)), n)
+    xc, yc = idl.cntrd(np.nan_to_num(hp, nan=0.0), ix, iy, 7.0)
+    if xc < 0:
+        raise RuntimeError("cntrd failed in the center stage")
+    return float(xc), float(yc)
+
+
+def gauss_center(med: np.ndarray, half: int = 20) -> Tuple[float, float]:
+    """Find the star in a median image from a Gaussian fit to its core.
+
+    Parameters
+    ----------
+    med : ndarray, shape (2 h, 2 h)
+        Median of aligned frames around the star, where h is half its size (at least 50).
+    half : int, default 20
+        Half size of the fitted box, pixels; it holds the core of a 15-18 px FWHM NOMIC PSF.
+
+    Returns
+    -------
+    xc, yc : float
+        Center of a circular Gaussian plus constant fitted by least squares to the
+        (2 half + 1)^2 pixels around the maximum of the 5-pixel boxcar-smoothed image within
+        50 px of the image center (NaN pixels left out; the box is clipped at the edges), in
+        the image's pixels, with pixel centers at integers as in ``idl.cntrd``.
+
+    Raises
+    ------
+    RuntimeError
+        When the fit fails or its center lies more than ``half`` from the starting maximum.
+    """
+    from scipy.optimize import curve_fit
+    n = med.shape[0]
+    h = n // 2
+    s = idl.smooth(np.nan_to_num(med, nan=0.0), 5)
+    yy, xx = np.mgrid[0:n, 0:n]
+    s[np.hypot(xx - h, yy - h) > 50] = -np.inf
+    iy, ix = divmod(int(np.argmax(s)), n)
+    y0, y1 = max(iy - half, 0), min(iy + half + 1, n)
+    x0, x1 = max(ix - half, 0), min(ix + half + 1, n)
+    sub = med[y0:y1, x0:x1]
+    ok = np.isfinite(sub)
+    if ok.sum() < 20:
+        raise RuntimeError("too few finite pixels for the Gaussian center")
+    gy, gx = np.mgrid[y0:y1, x0:x1]
+    vals = sub[ok]
+
+    def model(xy, amp, xc, yc, sig, off):
+        """Circular Gaussian plus constant at the points xy = (x, y)."""
+        return amp * np.exp(-((xy[0] - xc) ** 2 + (xy[1] - yc) ** 2) / (2.0 * sig ** 2)) + off
+
+    base = float(np.median(vals))
+    p0 = (float(vals.max()) - base, float(ix), float(iy), 7.0, base)
+    try:
+        p, _ = curve_fit(model, (gx[ok], gy[ok]), vals, p0=p0, maxfev=20000)
+    except (RuntimeError, ValueError) as err:
+        raise RuntimeError(f"Gaussian center fit failed: {err}") from err
+    if not (np.all(np.isfinite(p)) and abs(p[1] - ix) <= half and abs(p[2] - iy) <= half):
+        raise RuntimeError("Gaussian center fit left the fitted box")
+    return float(p[1]), float(p[2])
+
+
+def center_cube(cube: np.ndarray, st: Dict, rng: np.random.Generator, n_draw: int = 100,
+                diag: Optional[Dict] = None) -> Tuple[np.ndarray, Tuple[float, float]]:
+    """Center an aligned cube on its median star (IDL center stage, or a Gaussian fit to the core).
 
     Parameters
     ----------
     cube : ndarray, shape (m, 2 radius, 2 radius)
         Aligned frames, where m is their number.
     st : dict
-        Settings ``radius``.
+        Settings ``radius`` and ``center_method``: ``gauss`` (default) fits a circular Gaussian
+        to the core of the median of every frame (``gauss_center``); ``idl`` takes the IDL
+        center stage's centroid (``idl_center``) of the median of ``n_draw`` random frames.
     rng : numpy.random.Generator
-        Random generator for drawing the frames of the median; IDL draws 100 frames with
-        replacement from ``randomu``, so its draw cannot be reproduced exactly.
+        Random generator for the ``idl`` method's draw; IDL draws 100 frames with replacement
+        from ``randomu``, so its draw cannot be reproduced exactly.
     n_draw : int, default 100
-        Number of frames drawn; 0 uses every frame.
+        Number of frames the ``idl`` method draws; 0 uses every frame.
+    diag : dict, optional
+        Filled with ``center_idl`` and ``center_gauss``: both estimators' (x, y) on the median
+        used, in pixels (None where one fails), for the run's summary.
 
     Returns
     -------
     centered : ndarray, shape (m, 2 radius, 2 radius)
         Every frame shifted by ``fshift(radius - x - 0.5, radius - y - 0.5)``, where (x, y) is
-        the ``cntrd`` centroid (FWHM 7) of the high-passed median, near its maximum within 50 px
-        of the center. The median is taken over the central 256x256 pixels only, which holds
-        every pixel the 50-px zone and the 25-px smoothing use, so the result is unchanged. A
-        float32 input cube is overwritten and returned.
+        the chosen center. The median is taken over the central 256x256 pixels only, which
+        hold every pixel both estimators use. A float32 input cube is overwritten and returned.
     center : tuple of float
-        The centroid (x, y) found, in pixels.
+        The center (x, y) used, in pixels.
+
+    Raises
+    ------
+    ValueError
+        For an unknown ``center_method``.
+    RuntimeError
+        When the chosen estimator fails.
     """
     r = int(st["radius"])
     m = cube.shape[0]
-    idx = np.arange(m) if n_draw == 0 else np.clip(idl.idl_round(m * rng.random(n_draw)), 0, m - 1)
+    method = str(st.get("center_method", "gauss"))
     h = min(128, r)
     o = r - h
-    med = idl.median(cube[idx, o:o + 2 * h, o:o + 2 * h], axis=0, even=True)
-    med = med - idl.smooth(med, 25, nan=True)
-    yy, xx = np.mgrid[0:2 * h, 0:2 * h]
-    med[np.hypot(xx - h, yy - h) > 50] = 0.0
-    iy, ix = divmod(int(np.nanargmax(med)), 2 * h)
-    xc, yc = idl.cntrd(np.nan_to_num(med, nan=0.0), ix, iy, 7.0)
-    if xc < 0:
-        raise RuntimeError("cntrd failed in the center stage")
-    xc, yc = xc + o, yc + o
+    crop = cube[:, o:o + 2 * h, o:o + 2 * h]
+    if method == "idl":
+        idx = np.arange(m) if n_draw == 0 else np.clip(idl.idl_round(m * rng.random(n_draw)), 0, m - 1)
+        med = idl.median(crop[idx], axis=0, even=True)
+    elif method == "gauss":
+        med = binning.median_rows(crop, np.arange(m), block=32)
+    else:
+        raise ValueError(f"center_method must be 'gauss' or 'idl', not {method!r}")
+    est: Dict[str, Optional[Tuple[float, float]]] = {}
+    for name, fn in (("idl", idl_center), ("gauss", gauss_center)):
+        try:
+            x, y = fn(med)
+            est[name] = (x + o, y + o)
+        except RuntimeError:
+            est[name] = None
+    if diag is not None:
+        diag["center_idl"], diag["center_gauss"] = est["idl"], est["gauss"]
+    if est[method] is None:
+        raise RuntimeError(f"the {method} estimator failed in the center stage")
+    xc, yc = est[method]
     dx, dy = float(r) - xc - 0.5, float(r) - yc - 0.5
     out = cube if cube.dtype == np.float32 else np.empty(cube.shape, dtype=np.float32)
     for i in range(m):

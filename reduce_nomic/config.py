@@ -75,6 +75,12 @@ PORT_DEFAULTS: Dict[str, Any] = {
     "chopid_median": 0,       # width of a median filter on the chop-ID image against hot pixels (0 = off)
     "chopid_nostar_frac": 0.2,  # skip frames whose chop-ID peak S/N is below this fraction of the
                                 # round's median: no star in the searched region (0 = off, as IDL)
+    "center_method": "gauss",  # center stage: "gauss" fits a circular Gaussian to the core of each
+                               # chunk's median (geometry.gauss_center); "idl" reproduces the IDL
+                               # high-passed 7-px centroid of 100 random frames (geometry.idl_center)
+    "split_median_frames": 20,  # split stage: find the chop positions in the median of up to this many
+                                # frames of each chop at the chunk's start (1 reproduces IDL's single
+                                # frames)
     "seed": 0,              # seed for the random frame draws of the center stage
     "workers": 1,
     "display": False,       # live display (window, or a PNG when no X display is available)

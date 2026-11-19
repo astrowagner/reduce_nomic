@@ -294,9 +294,10 @@ def _chunk_task(args) -> Dict:
     -------
     res : dict
         ``binned``, ``angles``, ``exptimes`` (binned), ``coadds`` (kept frames, unbinned, as IDL
-        saves them), and diagnostics: frame counts, bad frames, alignment shifts, center, the
-        pre-clean's ``corrs``, ``noises`` and ``peaks``, and for the display ``thumb``, the
-        median of the centered frames' central 200x200 pixels.
+        saves them), and diagnostics: frame counts, bad frames, alignment shifts, the center
+        used and both estimators' centers (``center_idl``, ``center_gauss``; see
+        ``geometry.center_cube``), the pre-clean's ``corrs``, ``noises`` and ``peaks``, and for
+        the display ``thumb``, the median of the centered frames' central 200x200 pixels.
 
     Notes
     -----
@@ -319,10 +320,12 @@ def _chunk_task(args) -> Dict:
     exp = np.asarray(exptimes[lo:hi])[sel_rows]
     aligned, shifts = geometry.align_cube(cube, st)
     rng = np.random.default_rng([int(st["seed"]), c, cn])
-    centered, center = geometry.center_cube(aligned, st, rng)
+    diag: Dict = {}
+    centered, center = geometry.center_cube(aligned, st, rng, diag=diag)
     sel = select.measure_and_select(centered, ang, st, cn, pre=True)
     res = {"chunk": c, "cn": cn, "n_in": int(centered.shape[0]), "bad": sel.bad.tolist(),
-           "shifts": shifts.tolist(), "center": list(center), "corrs": sel.corrs.tolist(),
+           "shifts": shifts.tolist(), "center": list(center), "center_idl": diag.get("center_idl"),
+           "center_gauss": diag.get("center_gauss"), "corrs": sel.corrs.tolist(),
            "noises": sel.noises.tolist(), "peaks": sel.peaks.tolist(), "thumb": None}
     if st.get("display") and centered.shape[0]:
         r = int(st["radius"])
@@ -338,6 +341,39 @@ def _chunk_task(args) -> Dict:
     b, ab, eb = binning.prebin(centered, ang[sel.keep], exp[sel.keep], st, index=sel.keep)
     res.update(binned=b.astype(np.float32), angles=ab.tolist(), exptimes=eb.tolist(), coadds=coa[sel.keep].tolist())
     return res
+
+
+def _start_median(mm: np.ndarray, start: int, hi: int, chops: Sequence[str], label: str, k: int) -> np.ndarray:
+    """Take the median of a chunk's first k frames of one chop, for the split stage's positions.
+
+    Parameters
+    ----------
+    mm : ndarray, shape (n, 512, 512)
+        Corrected chop-combined frames (the chop subtraction's memmap), where n is their number.
+    start : int
+        First row searched.
+    hi : int
+        Row after the chunk's last.
+    chops : sequence of str
+        Chop of every row of ``mm``.
+    label : str
+        Chop of the frames taken (``CHOP_A`` or ``CHOP_B``).
+    k : int
+        Number of frames (``split_median_frames``); with 1 the first frame of that chop from
+        ``start`` on is returned itself, as the IDL predecessor uses single frames.
+
+    Returns
+    -------
+    img : ndarray, shape (512, 512)
+        Float64 NaN-ignoring median of up to k frames of chop ``label`` in rows ``start`` to
+        ``hi - 1`` (NaN where all are NaN); the frame at ``start`` when none has that chop.
+    """
+    rows = [i for i in range(start, hi) if chops[i] == label][:k]
+    if len(rows) <= 1:
+        return np.asarray(mm[rows[0] if rows else start], dtype=np.float64)
+    with warnings.catch_warnings():         # pixels masked in every frame
+        warnings.simplefilter("ignore", RuntimeWarning)
+        return np.nanmedian(np.asarray(mm[rows], dtype=np.float64), axis=0)
 
 
 def _blocks(n: int, size: int) -> List[Tuple[int, int]]:
@@ -766,13 +802,13 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
             log(f"warning: {int(np.sum(tot == 0))} all-NaN frames in the last chunk; the IDL "
                 "predecessor drops them from the cube but not from the angle list")
     fw = int(st["framew"])
+    k_med = max(1, int(st.get("split_median_frames", 1)))
     raw_pos = []
     for lo, hi in chunks:
-        ch = np.asarray(chops[lo:hi])
-        first = geometry.padded(np.asarray(mm[lo], np.float64), fw)
-        second = geometry.padded(np.asarray(mm[min(lo + 1, hi - 1)], np.float64), fw)
-        ia = int(np.nonzero(ch == "CHOP_A")[0][0]) + lo
-        check = geometry.padded(np.asarray(mm[ia], np.float64), fw)
+        j2 = min(lo + 1, hi - 1)
+        first = geometry.padded(_start_median(mm, lo, hi, chops, chops[lo], k_med), fw)
+        second = geometry.padded(_start_median(mm, j2, hi, chops, chops[j2], k_med), fw)
+        check = geometry.padded(_start_median(mm, lo, hi, chops, "CHOP_A", k_med), fw)
         raw_pos.append(geometry.find_positions(first, second, check, st))
     tasks, prev1, prev2 = [], None, None
     for cn in (1, 2):
@@ -863,7 +899,9 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
                                 "final": int(fin.shape[0]), "exptime_s": float(np.sum(exp_f)),
                                 "exptime_all_s": float(np.sum(exp)),
                                 "angle_range": [float(np.min(ang_f)), float(np.max(ang_f))] if ang_f.size else None,
-                                "centers": [r["center"] for r in res]}
+                                "centers": [r["center"] for r in res],
+                                "centers_idl": [r.get("center_idl") for r in res],
+                                "centers_gauss": [r.get("center_gauss") for r in res]}
     summary["elapsed_s"] = round(time.time() - t0, 1)
     with open(os.path.join(out_dir, f"{pre}_summary.json"), "x") as fh:
         json.dump(summary, fh, indent=1)
