@@ -82,6 +82,18 @@ On 1,600 sampled Procyon_13 frames (40 blocks of 20 over the night, both apertur
 - **Not from the alignment:** `fshift` by (0.5, 0.5) px changes it by 0.3 %, so it is dominated by spatially correlated background structure, not pixel noise.
 - **Reading:** it follows the chop-subtracted background residual between the chop re-syncs, and it reaches KLIP-TPE through the frame tags.
 
-**Still to do.** Reduce full nights on patrick and compare with the IDL products: frame counts, angles, the median PSF, and the frames kept by the selection.
+**Full night (2026-11-19, Procyon_13, both sides, b45da09).** The run took 27.6 min (left) and 23.5 min (right) with 64 workers on patrick. It was compared with the IDL products of February 2024 using `tools/compare_idl_products.py`.
+- **Right (DX):**
+  - Both versions have 515 bins per chop, and the kept unbinned frames agree within 0.04 %.
+  - Every bin's central 128×128 correlates at ≥ 0.9998 with IDL's.
+  - The median PSFs agree: correlation 1.0000, FWHM 16.52 against 16.51 px and 16.83 against 16.81 px, centers within 0.01 px.
+  - The clean selections agree on 98–100 % of bins.
+- **Left (SX):** 503 and 502 bins, against IDL's 502 and 503. The median PSFs correlate at 0.9999–1.0000, with equal FWHM (17.88 and 17.17 px). The bins correlate at a median of 0.9997–0.9999, and the clean selections agree on 95–97 %. The differences:
+  - **Bins at 41.1–41.4°**, just after the SX excursion (frames 91,700–93,900). IDL's are broken: the star is about 30 px off center, or absent, and IDL's clean rejects them. The port's are centered (frame-tag corrs 0.998–0.999), because it skips the excursion's frames without a star (2,404 frames in all). This also gives the port 209 and 100 more kept frames.
+  - **Three chunks are centered 1–2.5 px differently** (bins 135–139 of chop A, 150–154 and 419–425 of chop B). The center stage's centroid of a random 100-frame median lands on a different local maximum.
+  - **Centering consistency.** The per-bin core centers (Gaussian fits) scatter by 0.73–1.27 px on SX chop A and by 0.33–0.39 px on chop B, alike in both versions, against 0.02–0.06 px on DX. The center stage's high-passed centroid (FWHM 7) jumps between local maxima of SX's broader PSF. This is a limitation of the IDL predecessor that the port reproduces.
+- **Frame tags.** On all four cubes, the IDL-named clean products equal the kept rows of the all-bins products.
+
+**Still to do.** Reduce the other nights. Consider a center stage that is robust to SX-like PSFs, for example cross-correlating each chunk's median with the night's median PSF.
 
 **Memory.** A split-to-pre-bin task reads only its chop's frames of the chunk (up to about 500 frames, 0.5 GB) and cuts them into a float32 cube (up to about 2 GB at radius 500). It aligns, centers and peak-scales that cube in place, bins the kept frames by index, and takes each bin's median a block of 128 rows at a time. Its peak is about m × ((2 radius)² + 512²) × 4 bytes + 0.5 GB, where m is the chop's frame count in the chunk: 2.5 GB for a full chunk at radius 500. `tools/bench_chunk.py` measured 0.87 GB at m = 120 and 1.33 GB at m = 230, against 2.59 GB and 3.51 GB before (2347270). The products are bit-identical: all 24 products of a synthetic night, with frames rejected by the pre-clean (`tools/compare_versions.py`), and every output of a 230-frame chunk task (`tools/bench_chunk.py --compare`). The stage caps its workers at 75 % of `MemAvailable` (`pipeline._mem_workers`).
