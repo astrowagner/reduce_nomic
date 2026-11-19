@@ -79,3 +79,21 @@ def test_synthetic_night(tmp_path):
         assert np.isclose(np.nanmax(psf), 1.0, atol=0.05)
     assert summary["cubes"][1]["final"] >= 2
     assert json.load(open(os.path.join(out, "Fake_1_left_summary.json")))["n_raw"] == 240
+
+
+def test_synthetic_night_display_and_refusal(tmp_path, monkeypatch):
+    monkeypatch.delenv("DISPLAY", raising=False)
+    root = str(tmp_path / "archive")
+    make_night(root, n=120)
+    over = {"archive": root, "obj": "fakestar", "prebin": 5, "background_limit": 50000.0, "display": True,
+            "pre_corr_thresh_1": 0.5, "pre_corr_thresh_2": 0.5, "corr_thresh_1": 0.5, "corr_thresh_2": 0.5,
+            "pre_noise_thresh_1": 3, "pre_noise_thresh_2": 3, "noise_thresh_1": 3, "noise_thresh_2": 3,
+            "pre_peak_thresh_1": 0.5, "pre_peak_thresh_2": 0.5, "peak_thresh_1": 0.5, "peak_thresh_2": 0.5}
+    st = load_settings("Fake_1", nights_json=str(tmp_path / "none.json"), overrides=over)
+    out = str(tmp_path / "out")
+    reduce(st, "left", workers=2, out_dir=out)
+    png = os.path.join(out, "Fake_1_left_display.png")
+    assert os.path.getsize(png) > 10000
+    import pytest
+    with pytest.raises(FileExistsError):
+        reduce(st, "left", workers=2, out_dir=out)

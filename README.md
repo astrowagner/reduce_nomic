@@ -14,7 +14,12 @@ pip install -e .            # numpy, scipy, astropy
 reduce-nomic Procyon_17 --workers 16 --archive /mnt/RAID64TB/NOMIC
 reduce-nomic Procyon_17 --dry-run                     # settings and frame selection only
 reduce-nomic Procyon_17 --set radius=400 --set sky_dirs='["skys1"]'
+reduce-nomic Procyon_17 --workers 16 --display        # live view (pip install -e '.[display]')
 ```
+
+- **Progress:** every stage prints progress lines with an estimate of the time remaining.
+- **Live view:** `--display` opens a window showing the latest raw frame and detected star, the chop-subtracted frame and its high-pass, each chunk's centered median, the frame selection and a progress panel. Without an X display it rewrites `<night>_<side>_display.png` in the output folder instead.
+- **Reruns:** a run refuses to start if its outputs already exist.
 
 - **Settings:** start from the IDL defaults, then apply the night's object block from `reduce_nomic.pro`, which `tools/extract_idl_settings.py` extracts to `config/nights_idl.json`. `--set` overrides any setting by name.
 - **Outputs:** go to `<archive>/<night>/reduced_py/` and never overwrite an existing file. They use the IDL names:

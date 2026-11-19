@@ -12,6 +12,7 @@ dependencies = ["numpy>=1.22", "scipy>=1.8", "astropy>=5.0"]
 
 [project.optional-dependencies]
 test = ["pytest"]
+display = ["matplotlib"]
 
 [project.scripts]
 reduce-nomic = "reduce_nomic.cli:main_entry"

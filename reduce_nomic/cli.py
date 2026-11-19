@@ -4,13 +4,16 @@ Usage
 -----
     python3 -m reduce_nomic.cli NIGHT [--side left|right|both] [--workers N] [--archive PATH]
                                 [--out DIR] [--work DIR] [--frames FIRST LAST]
-                                [--set NAME=VALUE ...] [--nights-json PATH] [--dry-run]
+                                [--set NAME=VALUE ...] [--nights-json PATH] [--display] [--dry-run]
 
 NIGHT is the night folder name in the archive (e.g. ``Procyon_17``). Settings come from the IDL
 predecessor's defaults and the night's object block (``config/nights_idl.json``); ``--set``
 overrides any setting by name, with the value parsed as JSON when possible (``--set radius=400
---set sky_dirs='["../Alcor/skys1"]'``). ``--dry-run`` prints the settings and the selected
-frames and stops.
+--set sky_dirs='["../Alcor/skys1"]'``). ``--display`` opens a live view of the stages (raw
+frame and star, chop-subtracted frame, centered medians, frame selection, progress), or writes
+it to ``<out>/<night>_<side>_display.png`` when no X display is available; it needs matplotlib.
+``--dry-run`` prints the settings and the selected frames and stops. Progress lines with
+estimated remaining time are printed for every stage.
 
 Outputs
 -------
@@ -74,6 +77,7 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--frames", type=int, nargs=2, metavar=("FIRST", "LAST"))
     ap.add_argument("--set", action="append", default=[], metavar="NAME=VALUE")
     ap.add_argument("--nights-json")
+    ap.add_argument("--display", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
     over = {}
@@ -87,6 +91,8 @@ def main(argv: List[str]) -> int:
     if a.frames:
         over["frames"] = list(a.frames)
     over["workers"] = a.workers
+    if a.display:
+        over["display"] = True
     st = load_settings(a.night, a.nights_json, over)
     sides = chop_frames_per_side(st)
     if a.dry_run:

@@ -21,7 +21,7 @@ from astropy.io import fits
 
 from . import binning, chopsub, combine, geometry, idl, select
 from .config import Settings
-from .frames import RawFrame, list_raw, select_science_frames
+from .frames import RawFrame, list_raw, read_frame, select_science_frames
 
 
 def log(msg: str) -> None:
@@ -44,8 +44,8 @@ def log(msg: str) -> None:
 _FILES: Dict[str, List[RawFrame]] = {}
 
 
-def _run(fn, tasks: Sequence, workers: int) -> List:
-    """Map ``fn`` over ``tasks`` in forked worker processes, keeping the order.
+def _run(fn, tasks: Sequence, workers: int, label: str = "", on_result=None, disp=None) -> List:
+    """Map ``fn`` over ``tasks`` in forked worker processes, keeping the order, with progress.
 
     Parameters
     ----------
@@ -55,17 +55,50 @@ def _run(fn, tasks: Sequence, workers: int) -> List:
         Task arguments.
     workers : int
         Number of worker processes; 1 runs in this process.
+    label : str, default ""
+        Stage name for the progress lines.
+    on_result : callable, optional
+        Called as ``on_result(result)`` in this process as each result arrives, in order.
+    disp : Display, optional
+        Live display whose progress panel is updated.
 
     Returns
     -------
     results : list
         ``fn(task)`` for each task, in order. The pool is created here, after ``_FILES`` is
-        filled, so the workers inherit it without pickling.
+        filled, so the workers inherit it without pickling. A progress line (tasks done,
+        percent, elapsed and estimated remaining time) is printed at most every 10 s and at
+        the end.
     """
-    if workers <= 1 or len(tasks) <= 1:
-        return [fn(t) for t in tasks]
-    with mp.get_context("fork").Pool(min(workers, len(tasks))) as pool:
-        return pool.map(fn, tasks, chunksize=1)
+    n = len(tasks)
+    t0 = time.time()
+    last = [0.0]
+    out: List = []
+
+    def progress(done: int) -> None:
+        el = time.time() - t0
+        eta = el / done * (n - done) if done else None
+        if disp is not None:
+            disp.show_progress(label, done, n, el, eta)
+        if label and (done == n or time.time() - last[0] >= 10.0):
+            last[0] = time.time()
+            left = f", about {eta / 60:.1f} min left" if eta is not None and done < n else ""
+            log(f"{label}: {done}/{n} ({100.0 * done / max(n, 1):.0f} %), {el / 60:.1f} min elapsed{left}")
+
+    def handle(r) -> None:
+        out.append(r)
+        if on_result is not None:
+            on_result(r)
+        progress(len(out))
+
+    if workers <= 1 or n <= 1:
+        for t in tasks:
+            handle(fn(t))
+        return out
+    with mp.get_context("fork").Pool(min(workers, n)) as pool:
+        for r in pool.imap(fn, tasks, chunksize=1):
+            handle(r)
+    return out
 
 
 def _states_task(args) -> List[combine.FrameState]:
@@ -81,9 +114,25 @@ def _states_task(args) -> List[combine.FrameState]:
     -------
     states : list of FrameState
         The block's frame states.
+    thumb : tuple or None
+        For the display: the last kept frame's high-passed image (2x2 binned), its star
+        position in that image, its chop state and frame number; None without ``display``.
     """
     tag, lo, hi, init_bg, badmap, st = args
-    return combine.frame_states(_FILES[tag], lo, hi, init_bg, badmap, st)
+    states = combine.frame_states(_FILES[tag], lo, hi, init_bg, badmap, st)
+    thumb = None
+    if st.get("display"):
+        good = [s for s in states if s.star_x >= 0]
+        if good:
+            s = good[-1]
+            data = read_frame(_FILES[tag][s.pos].path)[0]
+            img = (data - idl.smooth(data, 20)).reshape(256, 2, 256, 2).mean(axis=(1, 3))
+            if st["chop_direction"] == "LEFT-RIGHT":
+                chop = "CHOP_A" if s.star_x < 256 else "CHOP_B"
+            else:
+                chop = "CHOP_A" if s.star_y < 256 else "CHOP_B"
+            thumb = (img.astype(np.float32), (s.star_x / 2.0, s.star_y / 2.0), chop, f"{s.num}")
+    return states, thumb
 
 
 def _segments_task(args) -> int:
@@ -123,6 +172,9 @@ def _chopsub_task(args) -> List[Tuple[int, float, float]]:
     noise : list of tuple
         ``(row, noise_before_sky, noise_after_sky)`` for sky-subtracted rows (IDL ``checksky``
         measure), empty otherwise.
+    thumb : tuple or None
+        For the display: the block's last corrected frame, its 35-px high-pass and its row
+        label; None without ``display``.
     """
     lo, hi, seg_path, out_path, n, badmap, st, sky_info = args
     seg = np.memmap(seg_path, dtype=np.float32, mode="r", shape=(n, 512, 512))
@@ -141,7 +193,10 @@ def _chopsub_task(args) -> List[Tuple[int, float, float]]:
             noise.append((i, float(np.nanmean(np.abs(before))), float(np.nanmean(np.abs(after)))))
         out[i] = f
     out.flush()
-    return noise
+    thumb = None
+    if st.get("display") and hi > lo:
+        thumb = (f.astype(np.float32), (f - idl.smooth(f, 35, nan=True)).astype(np.float32), f"segment {hi - 1}")
+    return noise, thumb
 
 
 def _chunk_task(args) -> Dict:
@@ -158,7 +213,8 @@ def _chunk_task(args) -> Dict:
     -------
     res : dict
         ``binned``, ``angles``, ``exptimes`` (binned), ``coadds`` (kept frames, unbinned, as IDL
-        saves them), and diagnostics: frame counts, bad frames, alignment shifts, center.
+        saves them), and diagnostics: frame counts, bad frames, alignment shifts, center, and
+        for the display ``thumb``, the median of the centered frames' central 200x200 pixels.
     """
     c, lo, hi, cn, pos_raw, pos_cut, path, n, chops, angles, coadds, exptimes, st = args
     which = "CHOP_A" if cn == 1 else "CHOP_B"
@@ -176,7 +232,11 @@ def _chunk_task(args) -> Dict:
     sel = select.measure_and_select(centered, ang, st, cn, pre=True)
     res = {"chunk": c, "cn": cn, "n_in": int(centered.shape[0]), "bad": sel.bad.tolist(),
            "shifts": shifts.tolist(), "center": list(center), "corrs": sel.corrs.tolist(),
-           "noises": sel.noises.tolist(), "peaks": sel.peaks.tolist()}
+           "noises": sel.noises.tolist(), "peaks": sel.peaks.tolist(), "thumb": None}
+    if st.get("display") and centered.shape[0]:
+        r = int(st["radius"])
+        step = max(1, centered.shape[0] // 50)
+        res["thumb"] = np.nanmedian(centered[::step, r - 100:r + 100, r - 100:r + 100], axis=0).astype(np.float32)
     if sel.keep.size == 0:
         res.update(binned=None, angles=[], exptimes=[], coadds=[])
         return res
@@ -236,8 +296,15 @@ def combine_round(files: Sequence[RawFrame], st: Dict, sky_round: bool, master: 
     init = combine.initial_background(files)
     badmap = combine.make_badmap(master, init["badtest"], st["badsigthresh"], int(st["badsz"]), int(st["badbuff"]), bool(st["fresh_badmap"]))
     _FILES[tag] = list(files)
+    disp = st.get("_disp")
+    st = {k: v for k, v in st.items() if k != "_disp"}
     tasks = [(tag, lo, hi, init["bg"], badmap, st) for lo, hi in _blocks(len(files), 500)]
-    states = [s for part in _run(_states_task, tasks, workers) for s in part]
+
+    def show(r):
+        if disp is not None and r[1] is not None:
+            disp.show_raw(*r[1])
+
+    states = [s for part, _ in _run(_states_task, tasks, workers, f"{tag} chop states", show, disp) for s in part]
     angles = None
     if st["fix_pa"]:
         angles = combine.parallactic_angles(states, float(st["ra"]), float(st["dec"]), float(st["lat"]), float(st["lng"]))
@@ -249,7 +316,8 @@ def combine_round(files: Sequence[RawFrame], st: Dict, sky_round: bool, master: 
     path = os.path.join(work, f"{tag}_segments.f32")
     np.memmap(path, dtype=np.float32, mode="w+", shape=(max(n, 1), 512, 512)).flush()
     blocks = _blocks(n, 200)
-    _run(_segments_task, [(list(range(lo, hi)), segs[lo:hi], tag, st, path, n) for lo, hi in blocks], workers)
+    _run(_segments_task, [(list(range(lo, hi)), segs[lo:hi], tag, st, path, n) for lo, hi in blocks], workers,
+         f"{tag} coadds", None, disp)
     return {"badmap": badmap, "segments": segs, "seg_path": path, "n": n, "states": states}
 
 
@@ -285,8 +353,15 @@ def chopsub_round(rnd: Dict, badmap: np.ndarray, st: Dict, work: str, tag: str, 
     sky_info = None
     if skies:
         sky_info = ([s.chop for s in rnd["segments"]], [float(s.inum) for s in rnd["segments"]], skies)
+    disp = st.get("_disp")
+    st = {k: v for k, v in st.items() if k != "_disp"}
     tasks = [(lo, hi, rnd["seg_path"], path, n, badmap, st, sky_info) for lo, hi in _blocks(n, 250)]
-    noise = [x for part in _run(_chopsub_task, tasks, workers) for x in part]
+
+    def show(r):
+        if disp is not None and r[1] is not None:
+            disp.show_chopsub(*r[1])
+
+    noise = [x for part, _ in _run(_chopsub_task, tasks, workers, f"{tag} chop subtraction", show, disp) for x in part]
     worse = [i for i, b, a in noise if b > 0 and (b - a) / b < -0.1]
     if st.get("checksky") and worse:
         log(f"{tag}: sky subtraction raised the noise by more than 10 % on {len(worse)} frames "
@@ -362,6 +437,21 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
     pre = f"{night}_{side}"
     t0 = time.time()
     chopsub.check_options(st)
+    planned = [f"{pre}_badmap.fits", f"{pre}_summary.json"] + [
+        f"{pre}_{name}" for cn in (1, 2) for name in (
+            f"cube{cn}_align_cen_clean_bin.fits", f"cube{cn}_align_cen_clean_median_PSF.fits",
+            f"cube{cn}_align_cen_median_PSF.fits", f"angles{cn}_clean_bin.fits",
+            f"angles{cn}_clean_bin.csv", f"coadds{cn}_clean_bin.csv")]
+    present = [f for f in planned if os.path.exists(os.path.join(out_dir, f))]
+    if present:
+        raise FileExistsError(f"{len(present)} outputs already exist in {out_dir} (e.g. {present[0]}); "
+                              "move them or give another --out")
+    disp = None
+    if st.get("display"):
+        from .display import Display
+        disp = Display(f"{night} {side}", os.path.join(out_dir, f"{pre}_display.png"))
+        log(f"display: {'window' if disp.backend != 'Agg' else 'PNG ' + disp.png}")
+    st["_disp"] = disp
     start = st["start_frame_left"] if side == "left" else st["start_frame_right"]
     end = st["end_frame_left"] if side == "left" else st["end_frame_right"]
     sci = select_science_frames(archive, night, start, end, frame_range=st.get("frames"))
@@ -372,7 +462,6 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
     for k, files in enumerate(sky_lists, 1):
         rounds.append(combine_round(files, st, True, master, work, f"{side}_round{k}", workers))
     badmap = rounds[-1]["badmap"]
-    write_fits(os.path.join(out_dir, f"{pre}_badmap.fits"), badmap)
     skies = []
     for k in range(len(rounds) - 1, 0, -1):
         path = chopsub_round(rounds[k], badmap, st, work, f"{side}_round{k}", workers)
@@ -416,7 +505,19 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
             tasks.append((c, lo, hi, cn, (p1, p2), q1 if cn == 1 else q2, sci_path, n, chops, angles,
                           coadds, exptimes, st))
     log(f"science: {n} frames in {len(chunks)} chunks; split, align, center, pre-clean, pre-bin")
-    results = _run(_chunk_task, tasks, workers)
+
+    def show(r):
+        if disp is not None and r.get("thumb") is not None:
+            cn = r["cn"]
+            disp.show_chunk(r["thumb"], r, {"corr": st[f"pre_corr_thresh_{cn}"],
+                                            "noise": st[f"pre_noise_thresh_{cn}"],
+                                            "peak": st[f"pre_peak_thresh_{cn}"]})
+
+    st_tasks = dict(st)
+    st_tasks.pop("_disp", None)
+    tasks = [t[:-1] + (st_tasks,) for t in tasks]
+    results = _run(_chunk_task, tasks, workers, f"{side} chunks", show, disp)
+    write_fits(os.path.join(out_dir, f"{pre}_badmap.fits"), badmap)
     summary = {"night": night, "side": side, "settings_source": settings.source, "n_raw": len(sci),
                "sky_dirs": sky_dirs[:int(st["n_sky"])], "n_segments": n, "chunks": len(chunks),
                "positions": raw_pos, "cubes": {}}
@@ -457,4 +558,6 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
     with open(os.path.join(out_dir, f"{pre}_summary.json"), "x") as fh:
         json.dump(summary, fh, indent=1)
     log(f"done in {summary['elapsed_s']} s: " + ", ".join(f"cube{cn} {v['final']} frames" for cn, v in summary["cubes"].items()))
+    if disp is not None:
+        disp.close()
     return summary

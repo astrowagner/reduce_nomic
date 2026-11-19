@@ -72,6 +72,7 @@ PORT_DEFAULTS: Dict[str, Any] = {
     "idl_smooth_bg": True,  # reproduce smooth_bg having no effect (IDL misspelling)
     "seed": 0,              # seed for the random frame draws of the center stage
     "workers": 1,
+    "display": False,       # live display (window, or a PNG when no X display is available)
 }
 
 
