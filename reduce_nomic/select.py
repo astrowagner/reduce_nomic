@@ -8,7 +8,7 @@ With ``peak_scale`` each kept frame is divided by its maximum pixel, as in IDL.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Sequence
 
 import numpy as np
@@ -44,6 +44,50 @@ class Selection:
     peaks: np.ndarray
     bad: np.ndarray
     keep: np.ndarray
+
+
+def _ring(hs: int) -> np.ndarray:
+    """Return the 0.3-0.65 arcsec ring of a central crop, the pre-clean's coronoise region.
+
+    Parameters
+    ----------
+    hs : int
+        Half size of the crop in pixels; the crop is 2 hs by 2 hs with the star at (hs, hs).
+
+    Returns
+    -------
+    ring : ndarray of bool, shape (2 hs, 2 hs)
+        True from 0.3 to 0.65 arcsec of the star, at 0.0179 arcsec per pixel.
+    """
+    yy, xx = np.mgrid[0:2 * hs, 0:2 * hs]
+    d = np.hypot(xx - hs, yy - hs)
+    return (d >= 0.3 / 0.0179) & (d <= 0.65 / 0.0179)
+
+
+def ring_noise(cube: np.ndarray, st: Dict) -> np.ndarray:
+    """Return each frame's standard deviation in the 0.3-0.65 arcsec ring around the star.
+
+    The pre-clean's coronoise measure (``pre_coronoise_clean``), computed for every frame and
+    without the ``annular_clean`` weighting, for the frame tags handed to KLIP-TPE.
+
+    Parameters
+    ----------
+    cube : ndarray, shape (m, 2 radius, 2 radius)
+        Centered frames, star at (radius, radius) in the 0-based pixel grid, where m is their
+        number.
+    st : dict
+        Setting ``radius``.
+
+    Returns
+    -------
+    noise : ndarray, shape (m,)
+        Sample standard deviation (ddof 1) of the ring's pixels in the central 128 x 128 pixels,
+        NaN taken as 0 as in the pre-clean, in the cube's units.
+    """
+    r, hs = int(st["radius"]), 64
+    ring = _ring(hs)
+    sub = np.nan_to_num(np.asarray(cube)[:, r - hs:r + hs, r - hs:r + hs], nan=0.0)
+    return np.array([float(np.std(f[ring], ddof=1)) for f in sub])
 
 
 def measure_and_select(cube: np.ndarray, angles: Sequence[float], st: Dict, chop: int, pre: bool) -> Selection:
@@ -83,9 +127,7 @@ def measure_and_select(cube: np.ndarray, angles: Sequence[float], st: Dict, chop
         raise NotImplementedError("coronoise_clean (clean stage) is not ported")
     coro = bool(pre and st.get("pre_coronoise_clean"))
     if coro:
-        yy, xx = np.mgrid[0:2 * hs, 0:2 * hs]
-        d = np.hypot(xx - hs, yy - hs)
-        ring = (d >= 0.3 / 0.0179) & (d <= 0.65 / 0.0179)
+        ring = _ring(hs)
     m = cube.shape[0]
     corrs, noises, peaks = np.zeros(m), np.zeros(m), np.zeros(m)
     coronoises = np.full(m, np.nan)

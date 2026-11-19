@@ -8,9 +8,10 @@ With ``--display`` the driver shows, as the stages run:
   recent frames, which alternates around its threshold while the chop is being identified (the
   star's x or y, or the change of the stripe mean for sky rounds and ``set_chop_via_bg``);
   and, once the round is segmented, the histogram of frames per segment;
-* bottom row, chop subtraction and frame selection: the latest chop-subtracted frame and its
-  35-px high-pass, each chunk's centered median, and its frame-selection measures with their
-  thresholds;
+* bottom row, chop subtraction and pre-clean: the latest chop-subtracted frame and its 35-px
+  high-pass, each chunk's centered median, and its pre-clean measures with their thresholds
+  (the IDL predecessor's pre-clean, before the pre-binning; the final frame selection is
+  KLIP-TPE's, from the frame tags);
 * a strip with the progress of every stage, the latest one also in the title.
 
 The window has the size of the KLIP-TPE live window, ``PANEL_PX`` = 1850 x 990 pixels at
@@ -573,7 +574,7 @@ class LiveView:
         self._mark("sub")
 
     def show_chunk(self, med: np.ndarray, res: Dict, thresholds: Dict) -> None:
-        """Show one chunk's centered median and frame-selection measures.
+        """Show one chunk's centered median and pre-clean measures.
 
         Parameters
         ----------
@@ -773,7 +774,7 @@ class LiveView:
             a.set_ylabel("Y (Pixels)")
 
     def _draw_chunk(self) -> None:
-        """Draw the centered-median and frame-selection panels.
+        """Draw the centered-median and pre-clean panels.
 
         Returns
         -------
@@ -785,8 +786,8 @@ class LiveView:
         a.clear()
         b.clear()
         if self._chunk is None:
-            self._empty(a, "Centered Median", "Shown during the frame selection")
-            self._empty(b, "Frame Selection", "Shown during the frame selection")
+            self._empty(a, "Centered Median", "Shown during the pre-clean")
+            self._empty(b, "Pre-Clean", "Shown during the pre-clean")
             return
         med, res, thr = self._chunk
         vmin, vmax = _stretch(med, 0.5, 99.9)
@@ -814,7 +815,7 @@ class LiveView:
                 b.plot(bad, c[bad], "x", color=MARK_COLOR, ms=5, label="Rejected")
         b.set_xlabel("Frame in Chunk")
         b.set_ylabel("Value")
-        b.set_title(f"Frame Selection: {len(res['bad']):,} of {c.size:,} Rejected")
+        b.set_title(f"Pre-Clean: {len(res['bad']):,} of {c.size:,} Frames Rejected")
         _opaque_legend(b.legend(loc="best"))
 
     @staticmethod
@@ -1281,7 +1282,7 @@ class Display:
         self._send("show_chopsub", np.asarray(img, np.float32), np.asarray(hp, np.float32), str(label))
 
     def show_chunk(self, med: np.ndarray, res: Dict, thresholds: Dict) -> None:
-        """Show one chunk's centered median and frame selection (``LiveView.show_chunk``).
+        """Show one chunk's centered median and pre-clean (``LiveView.show_chunk``).
 
         Parameters
         ----------

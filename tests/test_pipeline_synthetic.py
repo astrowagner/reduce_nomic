@@ -59,6 +59,7 @@ def make_night(root, n=240, period=6, star=((150.3, 192.6), (152.1, 320.4)), fwh
 
 
 def test_synthetic_night(tmp_path):
+    """Reduce a synthetic night and check the products: centering, peak, angles, and the frame tags."""
     root = str(tmp_path / "archive")
     make_night(root)
     st = load_settings("Fake_1", nights_json=str(tmp_path / "none.json"), overrides={
@@ -79,9 +80,25 @@ def test_synthetic_night(tmp_path):
         assert np.isclose(np.nanmax(psf), 1.0, atol=0.05)
     assert summary["cubes"][1]["final"] >= 2
     assert json.load(open(os.path.join(out, "Fake_1_left_summary.json")))["n_raw"] == 240
+    from astropy.table import Table
+    for cn in (1, 2):
+        every = fits.getdata(os.path.join(out, f"Fake_1_left_cube{cn}_align_cen_bin.fits"))
+        clean = fits.getdata(os.path.join(out, f"Fake_1_left_cube{cn}_align_cen_clean_bin.fits"))
+        ang = fits.getdata(os.path.join(out, f"Fake_1_left_angles{cn}_bin.fits"))
+        tags = Table.read(os.path.join(out, f"Fake_1_left_frametags{cn}_bin.fits"))
+        csv_rows = open(os.path.join(out, f"Fake_1_left_frametags{cn}_bin.csv")).read().splitlines()
+        assert every.shape[0] == ang.size == len(tags) == len(csv_rows) - 1 == summary["cubes"][cn]["binned"]
+        assert csv_rows[0].split(",")[:6] == ["frame", "angle_deg", "exptime_s", "corrs", "noises", "coronoise"]
+        keep = np.asarray(tags["idl_clean_keep"], bool)
+        assert keep.sum() == clean.shape[0]
+        assert np.array_equal(every[keep], clean, equal_nan=True)
+        assert np.all((tags["corrs"] > 0) & (tags["corrs"] <= 1.0001))
+        assert np.isclose(np.median(tags["noises"]), 1.0) and np.isclose(np.median(tags["coronoise"]), 1.0)
+        assert np.allclose(tags["angle_deg"], ang)
 
 
 def test_synthetic_night_display_and_refusal(tmp_path, monkeypatch):
+    """Check that the display writes its PNG and that a second run refuses to overwrite outputs."""
     monkeypatch.delenv("DISPLAY", raising=False)
     root = str(tmp_path / "archive")
     make_night(root, n=120)
@@ -100,6 +117,7 @@ def test_synthetic_night_display_and_refusal(tmp_path, monkeypatch):
 
 
 def test_work_lock_refuses_second_run(tmp_path):
+    """Check that a run refuses to start while another holds the work folder's lock."""
     import fcntl
     import pytest
     root = str(tmp_path / "archive")
@@ -129,10 +147,17 @@ def test_display_changes_no_product(tmp_path, monkeypatch):
         outs[disp] = str(tmp_path / f"out_display_{disp}")
         reduce(st, "left", workers=2, out_dir=outs[disp])
     names = sorted(os.path.basename(f) for f in glob.glob(os.path.join(outs[False], "*.fits")))
-    assert len(names) == 9           # badmap, and per chop: cube, two median PSFs, angles
+    # badmap, and per chop: the clean cube, two median PSFs and clean angles (the IDL products),
+    # and every binned frame's cube, angles and frame tags
+    assert len(names) == 15
     for name in names:
         a = fits.getdata(os.path.join(outs[False], name))
         b = fits.getdata(os.path.join(outs[True], name))
-        assert a.shape == b.shape and np.array_equal(a, b, equal_nan=True), name
+        if a.dtype.names:                                  # a table (the frame tags)
+            assert a.dtype.names == b.dtype.names and len(a) == len(b), name
+            for col in a.dtype.names:
+                assert np.array_equal(a[col], b[col], equal_nan=a[col].dtype.kind == "f"), (name, col)
+        else:
+            assert a.shape == b.shape and np.array_equal(a, b, equal_nan=True), name
     for f in glob.glob(os.path.join(outs[False], "*.csv")):
         assert open(f).read() == open(os.path.join(outs[True], os.path.basename(f))).read(), f

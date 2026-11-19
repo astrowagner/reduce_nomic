@@ -525,6 +525,63 @@ def write_fits(path: str, data, header: Optional[Dict] = None) -> None:
     hdu.writeto(path, overwrite=False)
 
 
+def write_frame_tags(stem: str, angles, exptimes, corrs, noises, coronoise, peaks, idl_keep) -> None:
+    """Write the frame tags of the binned frames, the metrics KLIP-TPE selects frames with.
+
+    Parameters
+    ----------
+    stem : str
+        Path without extension; ``.fits`` (a binary table) and ``.csv`` are written, never over
+        existing files.
+    angles, exptimes : array_like, shape (m,)
+        Parallactic angle in degrees and summed exposure time in seconds of each of the m binned
+        frames.
+    corrs : array_like, shape (m,)
+        Correlation of each frame with the mean of the frames within 50 of it, in the central
+        128 x 128 pixels (the clean stage's measure, 0 to 1).
+    noises : array_like, shape (m,)
+        Standard deviation of each frame outside the central 100 columns, in the cube's units
+        (counts per second before peak scaling).
+    coronoise : array_like, shape (m,)
+        Standard deviation of each frame from 0.3 to 0.65 arcsec of the star, in the same units
+        (``select.ring_noise``).
+    peaks : array_like, shape (m,)
+        Maximum pixel of each frame, in the same units.
+    idl_keep : array_like of bool, shape (m,)
+        True for the frames the IDL predecessor's clean stage keeps with the night's thresholds.
+
+    Returns
+    -------
+    None
+        Both files have the columns ``frame``, ``angle_deg``, ``exptime_s``, ``corrs``,
+        ``noises`` and ``coronoise`` (the noises over their median, the names and units of
+        KLIP-TPE's frame tags, which its ``corr_thresh``, ``noise_max`` and ``coronoise_max``
+        cut), ``noise_raw``, ``coronoise_raw``, ``peak_raw`` (the measures before normalizing)
+        and ``idl_clean_keep``.
+    """
+    from astropy.table import Table
+    noises = np.asarray(noises, dtype=float)
+    coronoise = np.asarray(coronoise, dtype=float)
+
+    def rel(v):
+        """Return v over its median, or v unchanged when the median is not positive."""
+        m = np.nanmedian(v) if v.size else np.nan
+        return v / m if np.isfinite(m) and m > 0 else v
+
+    t = Table({"frame": np.arange(len(noises)), "angle_deg": np.asarray(angles, dtype=float),
+               "exptime_s": np.asarray(exptimes, dtype=float), "corrs": np.asarray(corrs, dtype=float),
+               "noises": rel(noises), "coronoise": rel(coronoise), "noise_raw": noises,
+               "coronoise_raw": coronoise, "peak_raw": np.asarray(peaks, dtype=float),
+               "idl_clean_keep": np.asarray(idl_keep, dtype=bool)})
+    t.meta["COMMENT"] = ["Frame tags of the binned frames; KLIP-TPE cuts corrs, noises and coronoise."]
+    t.write(stem + ".fits", format="fits", overwrite=False)
+    with open(stem + ".csv", "x") as fh:
+        fh.write(",".join(t.colnames) + "\n")
+        for row in t:
+            fh.write(",".join(str(int(v)) if isinstance(v, (bool, np.bool_)) else
+                              (f"{v:.6g}" if isinstance(v, (float, np.floating)) else str(v)) for v in row) + "\n")
+
+
 def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[str] = None,
            work_dir: Optional[str] = None) -> Dict:
     """Reduce one night and aperture.
@@ -552,13 +609,20 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
     -----
     A run holds an exclusive lock on ``<work_dir>/lock`` (released when it ends, however it ends)
     and refuses to start when another run holds it or when any of its outputs already exist.
-    Outputs, in ``out_dir``, with the IDL predecessor's names:
-    ``<night>_<side>_cube<n>_align_cen_clean_bin.fits`` (frames, 2 radius x 2 radius, star at
-    (radius - 0.5, radius - 0.5)), ``<night>_<side>_angles<n>_clean_bin.fits`` (parallactic
-    angles in degrees) and ``.csv`` (angles and summed exposure times),
-    ``<night>_<side>_coadds<n>_clean_bin.csv``, ``<night>_<side>_cube<n>_align_cen_clean_median_PSF.fits``,
-    ``<night>_<side>_cube<n>_align_cen_median_PSF.fits`` (before the clean), and
-    ``<night>_<side>_badmap.fits``, for n = 1 (chop A) and 2 (chop B).
+    Outputs, in ``out_dir``, for n = 1 (chop A) and 2 (chop B), the frames 2 radius x 2 radius
+    with the star at (radius - 0.5, radius - 0.5):
+
+    * for KLIP-TPE, which makes the final frame selection itself: every binned frame after the
+      pre-clean, ``<night>_<side>_cube<n>_align_cen_bin.fits`` (replaced and peak-scaled as the
+      clean stage would), ``<night>_<side>_angles<n>_bin.fits`` (parallactic angles in degrees),
+      ``<night>_<side>_coadds<n>_bin.csv``, and the frame tags ``<night>_<side>_frametags<n>_bin``
+      ``.fits`` and ``.csv`` (``write_frame_tags``);
+    * with the IDL predecessor's names, after its clean stage, for comparison:
+      ``<night>_<side>_cube<n>_align_cen_clean_bin.fits``, ``<night>_<side>_angles<n>_clean_bin.fits``
+      and ``.csv`` (angles and summed exposure times), ``<night>_<side>_coadds<n>_clean_bin.csv``,
+      ``<night>_<side>_cube<n>_align_cen_clean_median_PSF.fits``;
+    * ``<night>_<side>_cube<n>_align_cen_median_PSF.fits`` (before replacement and clean) and
+      ``<night>_<side>_badmap.fits``.
     """
     st = dict(settings.values)
     st["side"] = side
@@ -575,7 +639,9 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
         f"{pre}_{name}" for cn in (1, 2) for name in (
             f"cube{cn}_align_cen_clean_bin.fits", f"cube{cn}_align_cen_clean_median_PSF.fits",
             f"cube{cn}_align_cen_median_PSF.fits", f"angles{cn}_clean_bin.fits",
-            f"angles{cn}_clean_bin.csv", f"coadds{cn}_clean_bin.csv")]
+            f"angles{cn}_clean_bin.csv", f"coadds{cn}_clean_bin.csv",
+            f"cube{cn}_align_cen_bin.fits", f"angles{cn}_bin.fits", f"frametags{cn}_bin.fits",
+            f"frametags{cn}_bin.csv", f"coadds{cn}_bin.csv")]
     present = [f for f in planned if os.path.exists(os.path.join(out_dir, f))]
     if present:
         raise FileExistsError(f"{len(present)} outputs already exist in {out_dir} (e.g. {present[0]}); "
@@ -685,13 +751,24 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
         write_fits(os.path.join(out_dir, f"{pre}_cube{cn}_align_cen_median_PSF.fits"), idl.median(big, axis=0, even=True))
         rep = np.stack([binning.replace_interior_nans(f) for f in big]).astype(np.float32) if big.shape[0] else big
         sel = select.measure_and_select(rep, ang, st, cn, pre=False)
-        fin = select.peak_scaled(rep) if st["peak_scale"] else rep
-        fin = fin[sel.keep]
+        every = select.peak_scaled(rep) if st["peak_scale"] else rep
+        head = {"RADIUS": int(st["radius"]), "XCEN": st["radius"] - 0.5, "YCEN": st["radius"] - 0.5,
+                "PXSCALE": st["pxscale"], "CHOP": "A" if cn == 1 else "B", "SIDE": side}
+        write_fits(os.path.join(out_dir, f"{pre}_cube{cn}_align_cen_bin.fits"), every,
+                   dict(head, FRAMESEL="none: KLIP-TPE selects with frametags"))
+        fits.PrimaryHDU(np.asarray(ang, dtype=np.float64)).writeto(
+            os.path.join(out_dir, f"{pre}_angles{cn}_bin.fits"), overwrite=False)
+        keep_mask = np.zeros(rep.shape[0], dtype=bool)
+        keep_mask[sel.keep] = True
+        write_frame_tags(os.path.join(out_dir, f"{pre}_frametags{cn}_bin"), ang, exp, sel.corrs, sel.noises,
+                         select.ring_noise(rep, st) if rep.shape[0] else np.zeros(0), sel.peaks, keep_mask)
+        with open(os.path.join(out_dir, f"{pre}_coadds{cn}_bin.csv"), "x") as fh:
+            fh.write("coadd\n" + "".join(f"{int(x)}\n" for x in coa))
+        fin = every[sel.keep]
         ang_f, exp_f = ang[sel.keep], exp[sel.keep]
         coa_f = np.delete(coa, sel.bad[sel.bad < coa.size])
         write_fits(os.path.join(out_dir, f"{pre}_cube{cn}_align_cen_clean_bin.fits"), fin,
-                   {"RADIUS": int(st["radius"]), "XCEN": st["radius"] - 0.5, "YCEN": st["radius"] - 0.5,
-                    "PXSCALE": st["pxscale"], "CHOP": "A" if cn == 1 else "B", "SIDE": side})
+                   dict(head, FRAMESEL="IDL clean thresholds"))
         write_fits(os.path.join(out_dir, f"{pre}_cube{cn}_align_cen_clean_median_PSF.fits"), idl.median(fin, axis=0))
         hdu = fits.PrimaryHDU(np.asarray(ang_f, dtype=np.float64))
         hdu.writeto(os.path.join(out_dir, f"{pre}_angles{cn}_clean_bin.fits"), overwrite=False)
@@ -705,12 +782,15 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
                                 "pre_clean_bad": int(sum(len(r["bad"]) for r in res)),
                                 "binned": int(big.shape[0]), "clean_bad": sel.bad.tolist(),
                                 "final": int(fin.shape[0]), "exptime_s": float(np.sum(exp_f)),
+                                "exptime_all_s": float(np.sum(exp)),
                                 "angle_range": [float(np.min(ang_f)), float(np.max(ang_f))] if ang_f.size else None,
                                 "centers": [r["center"] for r in res]}
     summary["elapsed_s"] = round(time.time() - t0, 1)
     with open(os.path.join(out_dir, f"{pre}_summary.json"), "x") as fh:
         json.dump(summary, fh, indent=1)
-    log(f"done in {summary['elapsed_s']} s: " + ", ".join(f"cube{cn} {v['final']} frames" for cn, v in summary["cubes"].items()))
+    log(f"done in {summary['elapsed_s']} s: " + ", ".join(
+        f"cube{cn} {v['binned']} binned frames with frame tags (the IDL clean would keep {v['final']})"
+        for cn, v in summary["cubes"].items()))
     if disp is not None:
         disp.close()
     return summary

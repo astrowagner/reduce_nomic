@@ -22,11 +22,13 @@ reduce-nomic Procyon_17 --workers 16 --display        # live view (pip install -
 - **Reruns:** a run refuses to start if its outputs already exist.
 
 - **Settings:** start from the IDL defaults, then apply the night's object block from `reduce_nomic.pro`, which `tools/extract_idl_settings.py` extracts to `config/nights_idl.json`. `--set` overrides any setting by name.
-- **Outputs:** go to `<archive>/<night>/reduced_py/` and never overwrite an existing file. They use the IDL names:
-  - `<night>_<side>_cube<n>_align_cen_clean_bin.fits`
-  - `_angles<n>_clean_bin.fits` / `.csv`
-  - `_cube<n>_align_cen_clean_median_PSF.fits`
-  - `_summary.json`
+- **Outputs:** go to `<archive>/<night>/reduced_py/` and never overwrite an existing file.
+  - **For KLIP-TPE**, which makes the final frame selection itself with its `corr_thresh`, `noise_max` and `coronoise_max`: every binned frame after the pre-clean.
+    - `<night>_<side>_cube<n>_align_cen_bin.fits`, peak-scaled.
+    - `_angles<n>_bin.fits`.
+    - `_frametags<n>_bin.fits` / `.csv`, the frame tags. `corrs`, `noises` and `coronoise` are in KLIP-TPE's names and units; the raw measures and the IDL clean's decision (`idl_clean_keep`) are also included.
+  - **With the IDL names**, after the IDL clean stage, for comparison: `_cube<n>_align_cen_clean_bin.fits`, `_angles<n>_clean_bin.fits` / `.csv` and `_cube<n>_align_cen_clean_median_PSF.fits`.
+  - `_summary.json`.
 - **Intermediates:** memory-mapped files in `reduced_py/work_<side>/`, which can be deleted after a run.
 
 ## Stages
@@ -36,7 +38,7 @@ reduce-nomic Procyon_17 --workers 16 --display        # live view (pip install -
 | `combine` | `do_combine` | Bad-pixel map, chop state of each frame from the star's position, coadds within each chop |
 | `chopsub` | `do_chop_sub` | Subtraction of the neighboring chops, channel-seam and polynomial background, `fixpix`, channel-edge NaNs, sky subtraction |
 | `geometry` | `do_split`, `do_align`, `do_center` | Cut 2·radius around each chop's star, cross-correlation alignment, centroid centering at (radius − 0.5, radius − 0.5) |
-| `select` | `do_pre_clean`, `do_clean` | Rejection by correlation, noise and peak; peak scaling |
+| `select` | `do_pre_clean`, `do_clean` | Pre-clean rejection by correlation, noise and peak; the clean's measures as frame tags; peak scaling |
 | `binning` | `do_pre_binning`, `do_replace` | Median bins of `prebin` frames, `fixpix` of interior NaNs |
 | `idl` | helper routines | `smooth`, `median`, `fshift`, `crosscorr`, `cntrd`, `fixpix`, `sfit`, `psf_gaussian` |
 

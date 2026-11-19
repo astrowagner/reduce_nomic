@@ -33,6 +33,16 @@ These quirks change results, so the port keeps them by default:
 
 **`fix_pa`.** On the five nights that set it (β UMa_5, β UMa_6, Procyon_7–9), the port recomputes the parallactic angle from DATE-OBS and TIME-END with astropy's mean sidereal time and IDL `parangle`'s formula. IDL's `ct2lst` takes the local hour and the time zone, which gives back the same UTC instant, so the two agree to well under a second of sidereal time.
 
+**Final frame selection.** In this pipeline, KLIP-TPE makes the final frame selection: its optimizer searches `corr_thresh`, `noise_max` and `coronoise_max` on per-frame tags. So the port runs the IDL clean stage's measures on every binned frame but does not drop frames.
+- It writes all binned frames (`*_cube<n>_align_cen_bin.fits`, replaced and peak-scaled as the clean stage would) with their angles.
+- It writes the frame tags (`*_frametags<n>_bin.fits` / `.csv`):
+  - `corrs`: the clean's correlation with the mean of the frames within 50;
+  - `noises`: the clean's noise outside the central 100 columns, over its median;
+  - `coronoise`: the standard deviation from 0.3 to 0.65″, the pre-clean's coronoise region, over its median;
+  - `idl_clean_keep`: the IDL clean's decision with the night's thresholds.
+- The IDL-named `*_clean_bin` products, which apply that decision, are still written for comparison with IDL.
+- The pre-clean, on the unbinned frames before the pre-binning, still rejects frames as IDL does.
+
 **Chop-ID destriping** (`chopid_destripe`, on by default). Before the masks, the port subtracts from each row of the chop-identification image its median over each channel half (x < 256 and x ≥ 256, skipping the border and blocked columns). This removes the horizontal stripes and channel-edge offsets that the rolling background leaves. The IDL predecessor has a commented-out `destripe` call at this point. The stripe-mean image of `set_chop_via_bg` is not destriped. `--set chopid_destripe=0` reproduces the IDL chop identification exactly.
 
 On 1,600 sampled Procyon_13 frames (40 blocks of 20 over the night, both apertures):
