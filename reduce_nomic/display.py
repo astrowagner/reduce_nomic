@@ -18,7 +18,8 @@ The window has the size of the KLIP-TPE live window, ``PANEL_PX`` = 1850 x 990 p
 on a smaller screen it is shrunk to fit. Its resizing is off. It opens once per run and is then
 redrawn in place, at most once per ``min_interval``, without being raised or given focus.
 Without an X display or Tk, the same view is written to a PNG file instead, at most every
-``PNG_INTERVAL`` seconds and at the end.
+``PNG_INTERVAL`` seconds and at the end. Window and PNG use the KLIP-TPE live panel's dark theme
+(``DARK_RC``), with colorblind-safe colors that read on black.
 
 The view (``LiveView``) runs in its own process, which ``Display``, the object the driver
 uses, starts and feeds: the window answers the desktop at all times, and a display that fails
@@ -47,6 +48,22 @@ PNG_INTERVAL = 10.0
 RECENT_FRAMES = 600
 #: most frames drawn in the star-position scatter (every k-th frame beyond this)
 MAX_SCATTER = 20000
+#: dark theme of the view, the KLIP-TPE live panel's (its ``_RC_DARK`` colors and IDL-window
+#: look: black background, white text and axes, boxed axes with inward ticks, no legend frames)
+DARK_RC = {"figure.facecolor": "black", "axes.facecolor": "black", "savefig.facecolor": "black",
+           "text.color": "white", "axes.labelcolor": "white", "axes.edgecolor": "white",
+           "xtick.color": "white", "ytick.color": "white", "grid.color": "#888888",
+           "xtick.direction": "in", "ytick.direction": "in", "xtick.top": True, "ytick.right": True,
+           "legend.frameon": False}
+#: colors on the dark background (Okabe-Ito, colorblind-safe): chop A, chop B, a third series
+CHOP_COLORS = {1: "#56B4E9", 2: "#E69F00"}
+THIRD_COLOR = "#009E73"
+#: reference lines (thresholds, splits), connecting lines, gray text, rejected frames and the
+#: detected-star circle
+LINE_COLOR, DIM_COLOR, NOTE_COLOR, MARK_COLOR = "#cccccc", "#5a5a5a", "#888888", "#FF4D4D"
+#: masked (NaN) pixels in images: a dark blue that stands apart from the black of low values
+#: without dominating the dark view
+MASK_COLOR = "#26345c"
 
 
 def _backend() -> str:
@@ -206,7 +223,7 @@ def _is_open(fig) -> bool:
 
 
 def _cmap(name: str):
-    """Return a copy of a matplotlib colormap that draws NaN pixels in navy.
+    """Return a copy of a matplotlib colormap that draws NaN pixels in ``MASK_COLOR``.
 
     Parameters
     ----------
@@ -216,10 +233,29 @@ def _cmap(name: str):
     Returns
     -------
     cmap : matplotlib.colors.Colormap
-        The colormap, NaN shown in navy so masked pixels stand out.
+        The colormap, NaN shown in ``MASK_COLOR`` so masked pixels stand out.
     """
     import matplotlib
-    return matplotlib.colormaps[name].with_extremes(bad="navy")
+    return matplotlib.colormaps[name].with_extremes(bad=MASK_COLOR)
+
+
+def _opaque_legend(leg) -> None:
+    """Draw a legend's markers fully opaque, whatever the alpha of the plotted points.
+
+    Parameters
+    ----------
+    leg : matplotlib.legend.Legend or None
+        Legend to change.
+
+    Returns
+    -------
+    None
+        The legend's handles get alpha 1.
+    """
+    if leg is None:
+        return
+    for h in getattr(leg, "legend_handles", None) or getattr(leg, "legendHandles", []):
+        h.set_alpha(1.0)
 
 
 def _stretch(img: np.ndarray, lo: float = 1.0, hi: float = 99.5) -> Tuple[float, float]:
@@ -288,7 +324,7 @@ class LiveView:
         matplotlib.use(self.backend, force=True)
         matplotlib.rcParams.update({"figure.raise_window": False, "toolbar": "None", "font.size": 9,
                                     "axes.titlesize": 10, "axes.labelsize": 9, "xtick.labelsize": 8,
-                                    "ytick.labelsize": 8, "legend.fontsize": 8})
+                                    "ytick.labelsize": 8, "legend.fontsize": 8, **DARK_RC})
         import matplotlib.pyplot as plt
         self.plt = plt
         self.png = png
@@ -401,7 +437,7 @@ class LiveView:
             The panel shows its title and the text, without ticks.
         """
         ax.set_title(title)
-        ax.text(0.5, 0.5, text, ha="center", va="center", color="0.5", transform=ax.transAxes)
+        ax.text(0.5, 0.5, text, ha="center", va="center", color=NOTE_COLOR, transform=ax.transAxes)
         ax.set_xticks([])
         ax.set_yticks([])
 
@@ -602,7 +638,7 @@ class LiveView:
         Returns
         -------
         None
-            The panel is drawn from the last ``show_chop_image`` data: masked pixels in navy, a
+            The panel is drawn from the last ``show_chop_image`` data: masked pixels in ``MASK_COLOR``, a
             square-root stretch from the 1st percentile to the star's peak, and the detected
             star circled; with ``via_bg`` a percentile stretch and the stripe region outlined.
         """
@@ -630,7 +666,7 @@ class LiveView:
                 vmax = vmax if vmax > vmin else vmin + 1.0
                 a.imshow(shown, origin="lower", cmap=_cmap("gray"), interpolation="nearest",
                          norm=PowerNorm(gamma=0.5, vmin=vmin, vmax=vmax))
-            a.plot([star[0]], [star[1]], "o", mfc="none", mec="red", ms=14, mew=1.5)
+            a.plot([star[0]], [star[1]], "o", mfc="none", mec=MARK_COLOR, ms=14, mew=1.5)
             a.set_title(f"Chop-ID Image {label}, Chop {chop[-1]}")
         if self._round.get("desc"):
             a.text(0.01, 0.01, self._round["desc"], transform=a.transAxes, fontsize=7, color="white",
@@ -660,36 +696,36 @@ class LiveView:
             self._empty(b, "Chop Decision", msg)
             return
         thin = max(1, num.size // MAX_SCATTER)
-        for c, col in ((1, "C0"), (2, "C1")):
+        for c, col in CHOP_COLORS.items():
             m = code == c
             a.plot(x[m][::thin], y[m][::thin], ".", ms=2, alpha=0.4, color=col,
                    label=f"Chop {'AB'[c - 1]}: {int(m.sum()):,}")
         a.plot([], [], " ", label=f"Over Bkg. Limit: {self._skipped:,}")
         if not r["via_bg"]:
             if r["direction"] == "LEFT-RIGHT":
-                a.axvline(256, color="k", lw=0.8, ls="--")
+                a.axvline(256, color=LINE_COLOR, lw=0.8, ls="--")
             else:
-                a.axhline(256, color="k", lw=0.8, ls="--")
+                a.axhline(256, color=LINE_COLOR, lw=0.8, ls="--")
         a.set_xlim(0, 512)
         a.set_ylim(0, 512)
         a.set_aspect("equal")
         a.set_xlabel("X (Pixels)")
         a.set_ylabel("Y (Pixels)")
-        a.legend(loc="upper right", markerscale=5, framealpha=0.8)
+        _opaque_legend(a.legend(loc="upper right", markerscale=5))
         a.set_title(f"Detected Star Positions, {num.size:,} Frames")
         k = slice(max(0, num.size - RECENT_FRAMES), num.size)
         n_, v_, c_ = num[k], value[k], code[k]
-        b.plot(n_, v_, "-", color="0.75", lw=0.6, zorder=1)
-        for c, col in ((1, "C0"), (2, "C1")):
+        b.plot(n_, v_, "-", color=DIM_COLOR, lw=0.6, zorder=1)
+        for c, col in CHOP_COLORS.items():
             m = c_ == c
             b.plot(n_[m], v_[m], ".", ms=3.5, color=col, label=f"Chop {'AB'[c - 1]}", zorder=2)
-        b.axhline(r["threshold"], color="k", lw=0.8, ls="--")
+        b.axhline(r["threshold"], color=LINE_COLOR, lw=0.8, ls="--")
         flips = int(np.count_nonzero(np.diff(c_))) if c_.size > 1 else 0
         b.set_title(f"Chop Decision, Last {n_.size:,} Frames: {flips:,} Flips")
         b.set_xlabel("Frame Number")
         b.set_ylabel(r["value_name"])
         b.ticklabel_format(axis="x", style="plain", useOffset=False)
-        b.legend(loc="upper right", markerscale=2, framealpha=0.8)
+        _opaque_legend(b.legend(loc="center right", markerscale=2))
 
     def _draw_seg(self) -> None:
         """Draw the frames-per-segment panel.
@@ -707,7 +743,7 @@ class LiveView:
         ln = self._seg
         if ln.size:
             hi = int(ln.max())
-            a.hist(ln, bins=np.arange(0.5, hi + 1.5, 1.0) if hi <= 200 else 60, color="C2")
+            a.hist(ln, bins=np.arange(0.5, hi + 1.5, 1.0) if hi <= 200 else 60, color=THIRD_COLOR)
         med = float(np.median(ln)) if ln.size else 0.0
         a.set_xlabel("Frames per Segment")
         a.set_ylabel("Segments")
@@ -766,20 +802,20 @@ class LiveView:
         x = np.arange(c.size)
         if c.size:
             with np.errstate(invalid="ignore", divide="ignore"):
-                b.plot(x, c, ".", ms=3, label="Correlation")
-                b.plot(x, n / np.nanmean(n), ".", ms=3, label="Noise / Mean")
-                b.plot(x, p / np.nanmean(p), ".", ms=3, label="Peak / Mean")
-            b.axhline(thr["corr"], color="C0", ls="--", lw=0.8)
-            b.axhline(thr["noise"], color="C1", ls="--", lw=0.8)
-            b.axhline(thr["peak"], color="C2", ls="--", lw=0.8)
+                b.plot(x, c, ".", ms=3, color=CHOP_COLORS[1], label="Correlation")
+                b.plot(x, n / np.nanmean(n), ".", ms=3, color=CHOP_COLORS[2], label="Noise / Mean")
+                b.plot(x, p / np.nanmean(p), ".", ms=3, color=THIRD_COLOR, label="Peak / Mean")
+            b.axhline(thr["corr"], color=CHOP_COLORS[1], ls="--", lw=0.8)
+            b.axhline(thr["noise"], color=CHOP_COLORS[2], ls="--", lw=0.8)
+            b.axhline(thr["peak"], color=THIRD_COLOR, ls="--", lw=0.8)
             bad = np.asarray(res["bad"], dtype=int)
             bad = bad[bad < c.size]
             if bad.size:
-                b.plot(bad, c[bad], "x", color="red", ms=5, label="Rejected")
+                b.plot(bad, c[bad], "x", color=MARK_COLOR, ms=5, label="Rejected")
         b.set_xlabel("Frame in Chunk")
         b.set_ylabel("Value")
         b.set_title(f"Frame Selection: {len(res['bad']):,} of {c.size:,} Rejected")
-        b.legend(loc="lower left", framealpha=0.8)
+        _opaque_legend(b.legend(loc="best"))
 
     @staticmethod
     def _progress_line(stage: str, item: Tuple[int, int, float, Optional[float]]) -> str:
