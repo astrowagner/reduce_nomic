@@ -51,6 +51,11 @@ On 1,600 sampled Procyon_13 frames (40 blocks of 20 over the night, both apertur
 - **Not fixed:** the 10 frames of an SX excursion near frame 91,700 stay wrong. Their star sat at y ≈ 205–225, in the rows the double-sided mask blanks for SX, so no star was in the searched region at all.
 - **Contrast:** the star's peak over the image's robust noise rises from about 140 to about 500 (SX) and from about 240 to about 620 (DX).
 
+**Frames without a star** (`chopid_nostar_frac`, 0.2 by default). A frame whose aperture has no star in the searched region still has a chop-ID maximum: a hot pixel, a channel edge or noise. IDL would give the frame a chop state from it.
+- **Rule:** the port measures each frame's peak S/N in the chop-ID image (`combine.chopid_snr`: the maximum over the robust noise of the unmasked pixels). It skips a science-round frame whose S/N is below 0.2× the round's median, as it skips frames over the background limit (`combine.reject_no_star`).
+- **Procyon_13, SX:** about 2,200 frames (~91,700–93,900) have the star at y ≈ 205–225, inside the rows the SX mask blanks. Their maxima sit on hot pixels near (25–45, 91–116), at S/N ~8, or 0.02× the median of ~360. Every frame with the star is at ≥ 0.65× the median. A 5×5 median filter (`chopid_median`, off by default) does not change that separation.
+- **Not applied** with `set_chop_via_bg` or in sky rounds. `--set chopid_nostar_frac=0` reproduces IDL.
+
 **Pauses.** No step pauses for a key (`hak`). `checksky` logs a warning instead of pausing.
 
 **Overwrites.** Outputs go to `reduced_py/`, and existing files are never overwritten. IDL deletes and rewrites `chop/` and `reduced/`.

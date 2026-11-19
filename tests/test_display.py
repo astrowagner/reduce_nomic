@@ -46,13 +46,16 @@ def _feed(d):
         nums = np.arange(200 * b, 200 * b + 200)
         chop_a = (nums // 6) % 2 == 0
         ys = np.where(chop_a, 192, 320)
-        d.add_states(nums, np.full(200, 150), ys, np.where(chop_a, "CHOP_A", "CHOP_B"), ys.astype(float), skipped=3)
+        snrs = np.full(200, 400.0) if b != 2 else np.full(200, 8.0)
+        d.add_states(nums, np.full(200, 150), ys, np.where(chop_a, "CHOP_A", "CHOP_B"), ys.astype(float), skipped=3,
+                     snrs=snrs)
         img = np.zeros((512, 512))
         img[21:190, 21:245] = rng.normal(size=(169, 224))
         img[140:150, 135:145] += 50.0
         d.show_chop_image(img, (140.0, 145.0), "CHOP_A", str(nums[-1]), via_bg=(b == 4))
         d.show_progress("left_round0 chop states", b + 1, 5, 10.0 * (b + 1), 10.0 * (4 - b))
     d.show_segments(np.full(166, 6))
+    d.mark_no_star(np.arange(400, 600), 80.0)
     d.show_chopsub(rng.normal(size=(512, 512)), rng.normal(size=(512, 512)), "segment 165")
     d.show_chunk(rng.normal(size=(200, 200)), {"chunk": 0, "cn": 1, "corrs": [0.9] * 20, "noises": [1.0] * 20,
                                                  "peaks": [1.0] * 20, "bad": [3]},

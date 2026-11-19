@@ -44,7 +44,8 @@ def log(msg: str) -> None:
 _FILES: Dict[str, List[RawFrame]] = {}
 
 
-def _run(fn, tasks: Sequence, workers: int, label: str = "", on_result=None, disp=None) -> List:
+def _run(fn, tasks: Sequence, workers: int, label: str = "", on_result=None, disp=None,
+         sizes: Optional[Sequence[int]] = None, unit: str = "tasks") -> List:
     """Map ``fn`` over ``tasks`` in forked worker processes, keeping the order, with progress.
 
     Parameters
@@ -62,42 +63,52 @@ def _run(fn, tasks: Sequence, workers: int, label: str = "", on_result=None, dis
     disp : Display, optional
         Live display whose progress strip is updated; while the next result is awaited its
         window events are processed every 0.2 s (``Display.pump``).
+    sizes : sequence of int, optional
+        Items (frames or segments) each task covers, so that progress counts items, not
+        tasks; default one item per task.
+    unit : str, default "tasks"
+        Name of the items, for the progress lines.
 
     Returns
     -------
     results : list
         ``fn(task)`` for each task, in order. The pool is created here, after ``_FILES`` is
-        filled, so the workers inherit it without pickling. A progress line (tasks done,
-        percent, elapsed and estimated remaining time) is printed at most every 10 s and at
-        the end.
+        filled, so the workers inherit it without pickling. A progress line (items done of
+        all, percent, elapsed and estimated remaining time) is printed at most every 10 s and
+        at the end.
     """
     n = len(tasks)
+    size = [1] * n if sizes is None else [int(v) for v in sizes]
+    cum = np.concatenate([[0], np.cumsum(size)]).astype(int)
+    total = int(cum[-1])
     t0 = time.time()
     last = [0.0]
     out: List = []
 
-    def progress(done: int) -> None:
-        """Report progress after ``done`` results.
+    def progress(done_tasks: int) -> None:
+        """Report progress after ``done_tasks`` results.
 
         Parameters
         ----------
-        done : int
+        done_tasks : int
             Results received so far.
 
         Returns
         -------
         None
             The display's progress strip is updated; a log line is printed at most every 10 s
-            and at the end.
+            and at the end. Both count items (``unit``), not tasks.
         """
+        done = int(cum[done_tasks])
         el = time.time() - t0
-        eta = el / done * (n - done) if done else None
+        eta = el / done * (total - done) if done else None
         if disp is not None:
-            disp.show_progress(label, done, n, el, eta)
-        if label and (done == n or time.time() - last[0] >= 10.0):
+            disp.show_progress(label, done, total, el, eta, unit)
+        if label and (done_tasks == n or time.time() - last[0] >= 10.0):
             last[0] = time.time()
-            left = f", about {eta / 60:.1f} min left" if eta is not None and done < n else ""
-            log(f"{label}: {done}/{n} ({100.0 * done / max(n, 1):.0f} %), {el / 60:.1f} min elapsed{left}")
+            left = f", about {eta / 60:.1f} min left" if eta is not None and done < total else ""
+            log(f"{label}: {done:,}/{total:,} {unit} ({100.0 * done / max(total, 1):.0f} %), "
+                f"{el / 60:.1f} min elapsed{left}")
 
     def handle(r) -> None:
         """Keep one result, pass it to ``on_result`` and report progress.
@@ -324,10 +335,11 @@ def _chop_feed(disp, st: Dict, sky_round: bool, tag: str):
     -------
     show : callable
         ``show(result)`` for each ``_states_task`` result, in order: adds the block's frames
-        (frame number, star position, chop state, and the value that decided it: the star's x
-        or y in pixels, or with ``set_chop_via_bg`` the stripe mean minus the previous kept
-        frame's) and shows the block's last chop-ID image with its chop state: the crude star
-        image, or with ``set_chop_via_bg`` the rolling-background-subtracted frame.
+        (frame number, star position, chop state, the value that decided it: the star's x or y
+        in pixels, or with ``set_chop_via_bg`` the stripe mean minus the previous kept frame's,
+        and the chop-ID peak S/N) and shows the block's last chop-ID image with its chop state:
+        the crude star image, or with ``set_chop_via_bg`` the rolling-background-subtracted
+        frame.
     """
     eff = dict(st)
     if sky_round:
@@ -360,7 +372,7 @@ def _chop_feed(disp, st: Dict, sky_round: bool, tag: str):
         sts, thumb = r
         if first[0] is None and sts:
             first[0] = sts[0].pos
-        nums, xs, ys, chops, vals = [], [], [], [], []
+        nums, xs, ys, chops, vals, snrs = [], [], [], [], [], []
         for q in sts:
             if q.star_x < 0:
                 continue
@@ -373,7 +385,8 @@ def _chop_feed(disp, st: Dict, sky_round: bool, tag: str):
             xs.append(q.star_x)
             ys.append(q.star_y)
             vals.append(val)
-        disp.add_states(nums, xs, ys, chops, vals, skipped=len(sts) - len(nums))
+            snrs.append(q.snr)
+        disp.add_states(nums, xs, ys, chops, vals, skipped=len(sts) - len(nums), snrs=snrs)
         if thumb is not None and chops:
             img, bsub, star, label = thumb
             disp.show_chop_image(bsub if via_bg else img, star, chops[-1], label, via_bg)
@@ -406,7 +419,9 @@ def combine_round(files: Sequence[RawFrame], st: Dict, sky_round: bool, master: 
     -------
     rnd : dict
         ``badmap``, ``segments`` (in chop-subtraction order), ``seg_path`` (memmap of their
-        frames, in that order), ``n`` (segment count) and ``states``.
+        frames, in that order), ``n`` (segment count), ``states``, and ``nostar`` and
+        ``nostar_cut``: the frames skipped for having no star in the searched region
+        (``combine.reject_no_star``, science round only) and the S/N cut used.
     """
     log(f"{tag}: {len(files)} frames, initial background and bad-pixel map")
     init = combine.initial_background(files)
@@ -422,7 +437,18 @@ def combine_round(files: Sequence[RawFrame], st: Dict, sky_round: bool, master: 
         show = _chop_feed(disp, st, sky_round, tag)
     else:
         show = None
-    states = [s for part, _ in _run(_states_task, tasks, workers, f"{tag} chop states", show, disp) for s in part]
+    states = [s for part, _ in _run(_states_task, tasks, workers, f"{tag} chop states", show, disp,
+                                    sizes=[hi - lo for _, lo, hi, *_ in tasks], unit="frames") for s in part]
+    frac = float(st.get("chopid_nostar_frac") or 0.0)
+    nrej, cut = 0, float("nan")
+    if not sky_round and not st["set_chop_via_bg"] and frac > 0:
+        snr = np.array([q.snr for q in states if q.star_x >= 0], dtype=float)
+        cut = frac * float(np.nanmedian(snr)) if np.isfinite(snr).any() else float("nan")
+        nrej = combine.reject_no_star(states, frac)
+        log(f"{tag}: {nrej:,} frames without a star in the searched region skipped "
+            f"(chop-ID peak S/N below {frac:g} x the median, {cut:.0f})")
+        if disp is not None:
+            disp.mark_no_star([q.num for q in states if q.nostar], cut)
     angles = None
     if st["fix_pa"]:
         angles = combine.parallactic_angles(states, float(st["ra"]), float(st["dec"]), float(st["lat"]), float(st["lng"]))
@@ -430,15 +456,16 @@ def combine_round(files: Sequence[RawFrame], st: Dict, sky_round: bool, master: 
     order = combine.segment_order(segs)
     segs = [segs[i] for i in order]
     n = len(segs)
-    log(f"{tag}: {sum(s.star_x >= 0 for s in states)} frames under the background limit, {n} segments")
+    log(f"{tag}: {sum(s.star_x >= 0 for s in states):,} frames used for chop states, {n:,} segments")
     if disp is not None:
         disp.show_segments([len(s.positions) for s in segs])
     path = os.path.join(work, f"{tag}_segments.f32")
     np.memmap(path, dtype=np.float32, mode="w+", shape=(max(n, 1), 512, 512)).flush()
     blocks = _blocks(n, 200)
     _run(_segments_task, [(list(range(lo, hi)), segs[lo:hi], tag, st, path, n) for lo, hi in blocks], workers,
-         f"{tag} coadds", None, disp)
-    return {"badmap": badmap, "segments": segs, "seg_path": path, "n": n, "states": states}
+         f"{tag} segment coadds", None, disp, sizes=[hi - lo for lo, hi in blocks], unit="segments")
+    return {"badmap": badmap, "segments": segs, "seg_path": path, "n": n, "states": states,
+            "nostar": nrej, "nostar_cut": cut}
 
 
 def chopsub_round(rnd: Dict, badmap: np.ndarray, st: Dict, work: str, tag: str, workers: int,
@@ -493,7 +520,8 @@ def chopsub_round(rnd: Dict, badmap: np.ndarray, st: Dict, work: str, tag: str, 
         if disp is not None and r[1] is not None:
             disp.show_chopsub(*r[1])
 
-    noise = [x for part, _ in _run(_chopsub_task, tasks, workers, f"{tag} chop subtraction", show, disp) for x in part]
+    noise = [x for part, _ in _run(_chopsub_task, tasks, workers, f"{tag} chop subtraction", show, disp,
+                                   sizes=[t[1] - t[0] for t in tasks], unit="segments") for x in part]
     worse = [i for i, b, a in noise if b > 0 and (b - a) / b < -0.1]
     if st.get("checksky") and worse:
         log(f"{tag}: sky subtraction raised the noise by more than 10 % on {len(worse)} frames "
@@ -735,10 +763,14 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
     st_tasks = dict(st)
     st_tasks.pop("_disp", None)
     tasks = [t[:-1] + (st_tasks,) for t in tasks]
-    results = _run(_chunk_task, tasks, workers, f"{side} chunks", show, disp)
+    sizes = [sum(1 for c in chops[t[1]:t[2]] if c == ("CHOP_A" if t[3] == 1 else "CHOP_B")) for t in tasks]
+    results = _run(_chunk_task, tasks, workers, f"{side} split, align, center, pre-clean", show, disp,
+                   sizes=sizes, unit="frames")
     write_fits(os.path.join(out_dir, f"{pre}_badmap.fits"), badmap)
     summary = {"night": night, "side": side, "settings_source": settings.source, "n_raw": len(sci),
                "sky_dirs": sky_dirs[:int(st["n_sky"])], "n_segments": n, "chunks": len(chunks),
+               "nostar_frames": int(rounds[0]["nostar"]),
+               "nostar_cut": None if not np.isfinite(rounds[0]["nostar_cut"]) else round(float(rounds[0]["nostar_cut"]), 2),
                "positions": raw_pos, "cubes": {}}
     for cn in (1, 2):
         res = [r for r in results if r["cn"] == cn]

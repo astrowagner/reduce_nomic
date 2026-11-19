@@ -35,8 +35,9 @@ OUT_CSV : str
     Setting overrides, ``NAME=VALUE`` (JSON values), e.g. ``--set chopid_destripe=0``.
 --png : str, optional
     Also feed the sampled blocks to the live display's view (``display.LiveView``, PNG only)
-    through the driver's own callback (``pipeline._chop_feed``), and write its final view to
-    ``PREFIX_<side>.png`` (must not exist).
+    through the driver's own callback (``pipeline._chop_feed``), apply the no-star cut to all
+    sampled frames together (``combine.reject_no_star`` with ``chopid_nostar_frac``), and write
+    the final view to ``PREFIX_<side>.png`` (must not exist). Needs all blocks in one call.
 """
 from __future__ import annotations
 
@@ -100,7 +101,7 @@ def main(argv=None) -> int:
     new = not os.path.exists(a.out_csv)
     last = a.samples if a.count is None else min(a.samples, a.first + a.count)
     sides = a.side or ["left", "right"]
-    views, feeds = {}, {}
+    views, feeds, kept = {}, {}, {side: [] for side in sides}
     if a.png:
         os.environ.pop("DISPLAY", None)
         from reduce_nomic.display import LiveView
@@ -130,13 +131,21 @@ def main(argv=None) -> int:
                         thumb = (img.astype(np.float32), bsub.astype(np.float32), (float(q.star_x), float(q.star_y)),
                                  f"{q.num}")
                     feeds[side]((sts, thumb))
+                    kept[side].extend(sts)
                 for q in sts:
                     out.write(f"{side},{b},{q.pos},{q.num},{q.median:.1f},{q.star_x},{q.star_y},{q.stripe:.3f}\n")
                 out.flush()
                 xs = sorted({q.star_x for q in sts})
                 print(f"block {b} ({lo}..{lo + a.block - 1}) {side}: x in {xs[:6]}{'...' if len(xs) > 6 else ''}, "
                       f"{time.time() - t0:.1f} s", flush=True)
-    for view in views.values():
+    for side, view in views.items():
+        frac = float(st.get("chopid_nostar_frac") or 0.0)
+        snr = np.array([q.snr for q in kept[side] if q.star_x >= 0], dtype=float)
+        if frac > 0 and np.isfinite(snr).any():
+            cut = frac * float(np.nanmedian(snr))
+            nrej = combine.reject_no_star(kept[side], frac)
+            view.mark_no_star([q.num for q in kept[side] if q.nostar], cut)
+            print(f"{side}: {nrej} of {snr.size} sampled frames without a star (S/N below {cut:.0f})", flush=True)
         view.close()
     return 0
 

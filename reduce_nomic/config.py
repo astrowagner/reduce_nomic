@@ -72,6 +72,9 @@ PORT_DEFAULTS: Dict[str, Any] = {
     "idl_smooth_bg": True,  # reproduce smooth_bg having no effect (IDL misspelling)
     "chopid_destripe": True,  # subtract each row's median, per channel half, from the chop-ID image
                               # (not in the IDL predecessor; False reproduces it)
+    "chopid_median": 0,       # width of a median filter on the chop-ID image against hot pixels (0 = off)
+    "chopid_nostar_frac": 0.2,  # skip frames whose chop-ID peak S/N is below this fraction of the
+                                # round's median: no star in the searched region (0 = off, as IDL)
     "seed": 0,              # seed for the random frame draws of the center stage
     "workers": 1,
     "display": False,       # live display (window, or a PNG when no X display is available)

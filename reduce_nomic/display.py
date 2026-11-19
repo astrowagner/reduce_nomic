@@ -7,7 +7,8 @@ With ``--display`` the driver shows, as the stages run:
   the chop state the pipeline gives it; the quantity that decides the chop state over the most
   recent frames, which alternates around its threshold while the chop is being identified (the
   star's x or y, or the change of the stripe mean for sky rounds and ``set_chop_via_bg``);
-  and, once the round is segmented, the histogram of frames per segment;
+  and the chop-ID peak S/N of every frame of the round, where frames without a star in the
+  searched region show as a dip and are drawn in gray once the round's cut skips them;
 * bottom row, chop subtraction and pre-clean: the latest chop-subtracted frame and its 35-px
   high-pass, each chunk's centered median, and its pre-clean measures with their thresholds
   (the IDL predecessor's pre-clean, before the pre-binning; the final frame selection is
@@ -394,13 +395,14 @@ class LiveView:
         self._suptitle = fig.suptitle(self.title, fontsize=11, fontweight="bold")
         self._round = {"tag": "", "value_name": "", "threshold": 256.0, "direction": "LEFT-RIGHT",
                        "via_bg": False, "desc": ""}
-        self._frames = {"num": [], "x": [], "y": [], "code": [], "value": []}
+        self._frames = {"num": [], "x": [], "y": [], "code": [], "value": [], "snr": []}
         self._skipped = 0
+        self._nostar_cut = None
         self._raw = None
         self._seg = None
         self._sub = None
         self._chunk = None
-        self.progress: Dict[str, Tuple[int, int, float, Optional[float]]] = {}
+        self.progress: Dict[str, Tuple] = {}
         self._dirty = set(self._draw)
 
     def _mark(self, key: str) -> None:
@@ -471,15 +473,16 @@ class LiveView:
         """
         self._round = {"tag": tag, "value_name": value_name, "threshold": float(threshold),
                        "direction": direction, "via_bg": bool(via_bg), "desc": str(desc)}
-        self._frames = {"num": [], "x": [], "y": [], "code": [], "value": []}
+        self._frames = {"num": [], "x": [], "y": [], "code": [], "value": [], "snr": []}
         self._skipped = 0
+        self._nostar_cut = None
         self._raw = None
         self._seg = None
         self._dirty.update(("raw", "states", "seg"))
         self.refresh(force=True)
 
     def add_states(self, nums: Sequence[int], xs: Sequence[int], ys: Sequence[int], chops: Sequence[str],
-                   values: Sequence[float], skipped: int = 0) -> None:
+                   values: Sequence[float], skipped: int = 0, snrs: Optional[Sequence[float]] = None) -> None:
         """Add a block of identified frames to the chop-identification panels.
 
         Parameters
@@ -494,11 +497,13 @@ class LiveView:
             The quantity that decided each chop state (see ``start_round``).
         skipped : int, default 0
             Frames of the block over the background limit, which get no chop state.
+        snrs : sequence of float, optional
+            Their chop-ID peak S/N (``combine.chopid_snr``); default NaN.
 
         Returns
         -------
         None
-            The star-position and chop-decision panels are redrawn at the next redraw.
+            The chop-identification panels are redrawn at the next redraw.
         """
         f = self._frames
         f["num"].append(np.asarray(nums, dtype=np.int64))
@@ -506,8 +511,32 @@ class LiveView:
         f["y"].append(np.asarray(ys, dtype=np.float32))
         f["code"].append(np.asarray([1 if c == "CHOP_A" else 2 for c in chops], dtype=np.int8))
         f["value"].append(np.asarray(values, dtype=np.float64))
+        f["snr"].append(np.full(len(f["num"][-1]), np.nan) if snrs is None else np.asarray(snrs, dtype=np.float64))
         self._skipped += int(skipped)
         self._mark("states")
+        self._dirty.add("seg")
+
+    def mark_no_star(self, nums: Sequence[int], cut: float) -> None:
+        """Mark the frames the pipeline skipped for having no star in the searched region.
+
+        Parameters
+        ----------
+        nums : sequence of int
+            Frame numbers of the skipped frames (``combine.reject_no_star``).
+        cut : float
+            The S/N below which a frame was skipped.
+
+        Returns
+        -------
+        None
+            Those frames are drawn in gray, as "No Star", and the cut is drawn on the S/N panel.
+        """
+        nums = np.asarray(nums, dtype=np.int64)
+        for blk_num, blk_code in zip(self._frames["num"], self._frames["code"]):
+            blk_code[np.isin(blk_num, nums)] = 0
+        self._nostar_cut = float(cut)
+        self._dirty.update(("states", "seg"))
+        self.refresh(force=True)
 
     def show_chop_image(self, img: np.ndarray, star: Sequence[float], chop: str, label: str,
                         via_bg: bool = False) -> None:
@@ -537,7 +566,7 @@ class LiveView:
         self._mark("raw")
 
     def show_segments(self, lengths: Sequence[int]) -> None:
-        """Show the histogram of frames per segment of the current round.
+        """Note the round's segments (runs of frames in one chop state, averaged into one frame).
 
         Parameters
         ----------
@@ -547,10 +576,10 @@ class LiveView:
         Returns
         -------
         None
-            The panel is redrawn at once.
+            The segment count and median length go into the star-position panel's legend.
         """
         self._seg = np.asarray(lengths, dtype=int)
-        self._dirty.add("seg")
+        self._dirty.add("states")
         self.refresh(force=True)
 
     def show_chopsub(self, img: np.ndarray, hp: np.ndarray, label: str) -> None:
@@ -593,7 +622,8 @@ class LiveView:
         self._chunk = (np.asarray(med), res, thresholds)
         self._mark("chunk")
 
-    def show_progress(self, stage: str, done: int, total: int, elapsed: float, eta: Optional[float]) -> None:
+    def show_progress(self, stage: str, done: int, total: int, elapsed: float, eta: Optional[float],
+                      unit: str = "") -> None:
         """Update the progress strip.
 
         Parameters
@@ -601,18 +631,20 @@ class LiveView:
         stage : str
             Stage label.
         done, total : int
-            Tasks done and in all.
+            Items done and in all.
         elapsed : float
             Seconds since the stage started.
         eta : float or None
             Estimated seconds left.
+        unit : str, default ""
+            Name of the items (``frames``, ``segments``).
 
         Returns
         -------
         None
             The strip and the title are redrawn at the next redraw.
         """
-        self.progress[stage] = (int(done), int(total), float(elapsed), eta)
+        self.progress[stage] = (int(done), int(total), float(elapsed), eta, str(unit))
         self._mark("prog")
 
     # -- drawing ---------------------------------------------------------------------------
@@ -621,15 +653,16 @@ class LiveView:
 
         Returns
         -------
-        num, x, y, code, value : ndarray, shape (m,)
-            Frame number, star x and y in pixels, chop code (1 = A, 2 = B) and decision value of
-            the m frames under the background limit so far.
+        num, x, y, code, value, snr : ndarray, shape (m,)
+            Frame number, star x and y in pixels, chop code (1 = A, 2 = B, 0 = no star),
+            decision value and chop-ID peak S/N of the m frames under the background limit so
+            far.
         """
         f = self._frames
         if not f["num"]:
             e = np.zeros(0)
-            return e.astype(np.int64), e, e, e.astype(np.int8), e
-        out = [np.concatenate(f[k]) for k in ("num", "x", "y", "code", "value")]
+            return e.astype(np.int64), e, e, e.astype(np.int8), e, e
+        out = [np.concatenate(f[k]) for k in ("num", "x", "y", "code", "value", "snr")]
         order = np.argsort(out[0], kind="stable")
         return tuple(a[order] for a in out)
 
@@ -683,7 +716,7 @@ class LiveView:
         None
             The panels are drawn from the frames added since ``start_round``.
         """
-        num, x, y, code, value = self._arrays()
+        num, x, y, code, value, _ = self._arrays()
         r = self._round
         a = self.ax["pos"]
         a.clear()
@@ -697,11 +730,14 @@ class LiveView:
             self._empty(b, "Chop Decision", msg)
             return
         thin = max(1, num.size // MAX_SCATTER)
-        for c, col in CHOP_COLORS.items():
+        for c, col, name in ((1, CHOP_COLORS[1], "Chop A"), (2, CHOP_COLORS[2], "Chop B"), (0, NOTE_COLOR, "No Star")):
             m = code == c
-            a.plot(x[m][::thin], y[m][::thin], ".", ms=2, alpha=0.4, color=col,
-                   label=f"Chop {'AB'[c - 1]}: {int(m.sum()):,}")
+            if c == 0 and not m.any():
+                continue
+            a.plot(x[m][::thin], y[m][::thin], ".", ms=2, alpha=0.4, color=col, label=f"{name}: {int(m.sum()):,}")
         a.plot([], [], " ", label=f"Over Bkg. Limit: {self._skipped:,}")
+        if self._seg is not None and self._seg.size:
+            a.plot([], [], " ", label=f"Segments: {self._seg.size:,} (Median {np.median(self._seg):.0f} Frames)")
         if not r["via_bg"]:
             if r["direction"] == "LEFT-RIGHT":
                 a.axvline(256, color=LINE_COLOR, lw=0.8, ls="--")
@@ -717,9 +753,11 @@ class LiveView:
         k = slice(max(0, num.size - RECENT_FRAMES), num.size)
         n_, v_, c_ = num[k], value[k], code[k]
         b.plot(n_, v_, "-", color=DIM_COLOR, lw=0.6, zorder=1)
-        for c, col in CHOP_COLORS.items():
+        for c, col, name in ((1, CHOP_COLORS[1], "Chop A"), (2, CHOP_COLORS[2], "Chop B"), (0, NOTE_COLOR, "No Star")):
             m = c_ == c
-            b.plot(n_[m], v_[m], ".", ms=3.5, color=col, label=f"Chop {'AB'[c - 1]}", zorder=2)
+            if c == 0 and not m.any():
+                continue
+            b.plot(n_[m], v_[m], ".", ms=3.5, color=col, label=name, zorder=2)
         b.axhline(r["threshold"], color=LINE_COLOR, lw=0.8, ls="--")
         flips = int(np.count_nonzero(np.diff(c_))) if c_.size > 1 else 0
         b.set_title(f"Chop Decision, Last {n_.size:,} Frames: {flips:,} Flips")
@@ -729,26 +767,42 @@ class LiveView:
         _opaque_legend(b.legend(loc="center right", markerscale=2))
 
     def _draw_seg(self) -> None:
-        """Draw the frames-per-segment panel.
+        """Draw the chop-ID peak S/N of every frame of the round against frame number.
 
         Returns
         -------
         None
-            The panel is drawn from the last ``show_segments`` data.
+            Chop A, chop B and no-star frames in their colors (at most ``MAX_SCATTER`` points), a
+            log axis, the round's median S/N dotted and, once the round is done, the no-star cut
+            dashed. A dip shows where the star left the searched region.
         """
         a = self.ax["seg"]
         a.clear()
-        if self._seg is None:
-            self._empty(a, "Frames per Segment", "Shown once the round is segmented")
+        num, _, _, code, _, snr = self._arrays()
+        good = np.isfinite(snr) & (snr > 0)
+        if not good.any():
+            msg = "Not measured (stripe-mean chop identification)" if self._round.get("via_bg") else \
+                "Waiting for the chop identification"
+            self._empty(a, "Chop-ID Peak S/N", msg)
             return
-        ln = self._seg
-        if ln.size:
-            hi = int(ln.max())
-            a.hist(ln, bins=np.arange(0.5, hi + 1.5, 1.0) if hi <= 200 else 60, color=THIRD_COLOR)
-        med = float(np.median(ln)) if ln.size else 0.0
-        a.set_xlabel("Frames per Segment")
-        a.set_ylabel("Segments")
-        a.set_title(f"Frames per Segment: {ln.size:,} Segments, Median {med:.0f}")
+        thin = max(1, num.size // MAX_SCATTER)
+        for c, col, name in ((1, CHOP_COLORS[1], "Chop A"), (2, CHOP_COLORS[2], "Chop B"), (0, NOTE_COLOR, "No Star")):
+            m = (code == c) & good
+            if c == 0 and not m.any():
+                continue
+            a.plot(num[m][::thin], snr[m][::thin], ".", ms=2.5, color=col, label=name)
+        med = float(np.median(snr[good]))
+        a.axhline(med, color=LINE_COLOR, lw=0.8, ls=":", label=f"Median {med:.0f}")
+        title = f"Chop-ID Peak S/N, {num.size:,} Frames"
+        if self._nostar_cut is not None:
+            a.axhline(self._nostar_cut, color=MARK_COLOR, lw=0.8, ls="--", label=f"No-Star Cut {self._nostar_cut:.0f}")
+            title = f"Chop-ID Peak S/N: {int(np.sum(code == 0)):,} of {num.size:,} Without a Star"
+        a.set_yscale("log")
+        a.set_xlabel("Frame Number")
+        a.set_ylabel("Peak / Robust Noise")
+        a.ticklabel_format(axis="x", style="plain", useOffset=False)
+        a.set_title(title)
+        _opaque_legend(a.legend(loc="lower left", markerscale=3))
 
     def _draw_sub(self) -> None:
         """Draw the chop-subtracted frame and its high-pass.
@@ -819,7 +873,7 @@ class LiveView:
         _opaque_legend(b.legend(loc="best"))
 
     @staticmethod
-    def _progress_line(stage: str, item: Tuple[int, int, float, Optional[float]]) -> str:
+    def _progress_line(stage: str, item: Tuple) -> str:
         """Format one stage's progress.
 
         Parameters
@@ -827,17 +881,19 @@ class LiveView:
         stage : str
             Stage label.
         item : tuple
-            ``(done, total, elapsed, eta)`` as given to ``show_progress``.
+            ``(done, total, elapsed, eta, unit)`` as given to ``show_progress``.
 
         Returns
         -------
         line : str
-            Stage, tasks done of all, percent, elapsed minutes and, while running, minutes left.
+            Stage, items done of all with their unit, percent, elapsed minutes and, while
+            running, minutes left.
         """
-        d, t, e, r = item
+        d, t, e, r = item[:4]
+        unit = f" {item[4]}" if len(item) > 4 and item[4] else ""
         pct = 100.0 * d / t if t else 100.0
         left = f", {r / 60:.1f} min left" if r is not None and d < t else ""
-        return f"{stage}: {d:,}/{t:,} ({pct:.0f} %), {e / 60:.1f} min{left}"
+        return f"{stage}: {d:,}/{t:,}{unit} ({pct:.0f} %), {e / 60:.1f} min{left}"
 
     def _draw_prog(self) -> None:
         """Draw the progress strip and the title.
@@ -1218,12 +1274,12 @@ class Display:
         self._send("start_round", tag, value_name, float(threshold), direction, bool(via_bg), str(desc))
 
     def add_states(self, nums: Sequence[int], xs: Sequence[int], ys: Sequence[int], chops: Sequence[str],
-                   values: Sequence[float], skipped: int = 0) -> None:
+                   values: Sequence[float], skipped: int = 0, snrs: Optional[Sequence[float]] = None) -> None:
         """Add a block of identified frames (``LiveView.add_states``).
 
         Parameters
         ----------
-        nums, xs, ys, chops, values, skipped
+        nums, xs, ys, chops, values, skipped, snrs
             As for ``LiveView.add_states``.
 
         Returns
@@ -1232,7 +1288,23 @@ class Display:
             The block is sent to the display process as arrays.
         """
         self._send("add_states", np.asarray(nums, np.int64), np.asarray(xs, np.float32),
-                   np.asarray(ys, np.float32), [str(c) for c in chops], np.asarray(values, np.float64), int(skipped))
+                   np.asarray(ys, np.float32), [str(c) for c in chops], np.asarray(values, np.float64), int(skipped),
+                   None if snrs is None else np.asarray(snrs, np.float64))
+
+    def mark_no_star(self, nums: Sequence[int], cut: float) -> None:
+        """Mark the frames skipped for having no star (``LiveView.mark_no_star``).
+
+        Parameters
+        ----------
+        nums, cut
+            As for ``LiveView.mark_no_star``.
+
+        Returns
+        -------
+        None
+            The call is sent to the display process.
+        """
+        self._send("mark_no_star", np.asarray(nums, np.int64), float(cut))
 
     def show_chop_image(self, img: np.ndarray, star: Sequence[float], chop: str, label: str,
                         via_bg: bool = False) -> None:
@@ -1252,7 +1324,7 @@ class Display:
                    str(label), bool(via_bg))
 
     def show_segments(self, lengths: Sequence[int]) -> None:
-        """Show the histogram of frames per segment (``LiveView.show_segments``).
+        """Note the round's segments (``LiveView.show_segments``).
 
         Parameters
         ----------
@@ -1298,12 +1370,13 @@ class Display:
         keep = {k: res[k] for k in ("chunk", "cn", "corrs", "noises", "peaks", "bad")}
         self._send("show_chunk", np.asarray(med, np.float32), keep, {k: float(v) for k, v in thresholds.items()})
 
-    def show_progress(self, stage: str, done: int, total: int, elapsed: float, eta: Optional[float]) -> None:
+    def show_progress(self, stage: str, done: int, total: int, elapsed: float, eta: Optional[float],
+                      unit: str = "") -> None:
         """Update the progress strip (``LiveView.show_progress``).
 
         Parameters
         ----------
-        stage, done, total, elapsed, eta
+        stage, done, total, elapsed, eta, unit
             As for ``LiveView.show_progress``.
 
         Returns
@@ -1312,7 +1385,7 @@ class Display:
             The call is sent to the display process.
         """
         self._send("show_progress", str(stage), int(done), int(total), float(elapsed),
-                   None if eta is None else float(eta))
+                   None if eta is None else float(eta), str(unit))
 
     def pump(self) -> None:
         """Pass on the display process's log lines and notice when it has ended.

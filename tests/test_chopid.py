@@ -112,3 +112,35 @@ def test_frame_states_keeps_the_last_chop_image(tmp_path):
     assert np.unravel_index(np.argmax(img), img.shape) == (s.star_y, s.star_x)
     plain = combine.frame_states(files, 10, 25, init["bg"], bad, st)
     assert [(q.star_x, q.star_y) for q in plain] == [(q.star_x, q.star_y) for q in states]
+
+
+def test_reject_no_star_skips_frames_far_below_the_median():
+    """Check that frames with a peak S/N far below the round's median are skipped and flagged."""
+    from reduce_nomic.combine import FrameState
+    states = [FrameState(pos=i, num=i, inum="", date="", time_end="", angle=0.0, dit=0.1, objname="x",
+                         median=0.0, star_x=140, star_y=145, snr=400.0 + i) for i in range(20)]
+    states[3].snr = 8.0
+    states[4].snr = 60.0
+    states[5].star_x = states[5].star_y = -1          # over the background limit: untouched
+    states[5].snr = float("nan")
+    n = combine.reject_no_star(states, 0.2)
+    assert n == 2 and states[3].nostar and states[4].nostar and not states[6].nostar
+    assert (states[3].star_x, states[3].star_y) == (-1, -1) and states[6].star_x == 140
+    assert combine.reject_no_star(states, 0.0) == 0
+
+
+def test_frame_states_measures_the_peak_snr(tmp_path):
+    """Check that frame_states records a finite, large peak S/N for frames with a star."""
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from test_pipeline_synthetic import make_night
+    from reduce_nomic.frames import list_raw
+    root = str(tmp_path / "archive")
+    make_night(root, n=30)
+    files = list_raw(os.path.join(root, "Fake_1", "raw"))
+    st = _settings(background_limit=50000.0)
+    init = combine.initial_background(files)
+    states = combine.frame_states(files, 6, 20, init["bg"], np.ones((512, 512)), st)
+    snr = np.array([q.snr for q in states])
+    assert np.all(np.isfinite(snr)) and snr.min() > 20
+    assert combine.reject_no_star(states, 0.2) == 0

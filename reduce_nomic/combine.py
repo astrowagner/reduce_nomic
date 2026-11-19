@@ -142,8 +142,9 @@ def crude_star_image(frame: np.ndarray, bg: np.ndarray, badmap: np.ndarray, st: 
         Bad-pixel map (1 good, 0 bad).
     st : dict
         Settings: ``bg_sub``, ``block_right``, ``block_stripe``, ``double_sided``, ``block_extra``,
-        ``side``, ``sx_top``, ``dx_bottom``, ``block_bad_channel``, ``set_chop_via_bg``, and
-        ``chopid_destripe`` (``destripe_rows`` before the masks; absent means off).
+        ``side``, ``sx_top``, ``dx_bottom``, ``block_bad_channel``, ``set_chop_via_bg``,
+        ``chopid_destripe`` (``destripe_rows`` before the masks) and ``chopid_median`` (a
+        median filter of that width, after destriping, against hot pixels); absent means off.
 
     Returns
     -------
@@ -155,6 +156,9 @@ def crude_star_image(frame: np.ndarray, bg: np.ndarray, badmap: np.ndarray, st: 
     b = bframe - bg if st["bg_sub"] else bframe
     first = b.copy()
     b = destripe_rows(b, st) if st.get("chopid_destripe") else b.copy()
+    if int(st.get("chopid_median") or 0) > 1:
+        from scipy.ndimage import median_filter
+        b = median_filter(b, size=int(st["chopid_median"]), mode="nearest")
     if st["block_right"]:
         b[:, 250:512] = 0.0
     b[:, 0:21] = 0.0
@@ -216,6 +220,13 @@ class FrameState:
         Maximum pixel of the crude star image, or -1 when the frame is over the background limit.
     stripe : float
         Mean of rows 126-130, columns 50-100 of the crude image (used with ``set_chop_via_bg``).
+    snr : float
+        The crude image's maximum over its robust noise (``chopid_snr``); NaN over the
+        background limit or with ``set_chop_via_bg``.
+    nostar : bool
+        True when ``reject_no_star`` found no star (S/N far below the round's), in which case
+        star_x and star_y are set to -1 and the frame is skipped like one over the background
+        limit.
     """
 
     pos: int
@@ -230,6 +241,8 @@ class FrameState:
     star_x: int = -1
     star_y: int = -1
     stripe: float = float("nan")
+    snr: float = float("nan")
+    nostar: bool = False
 
 
 def initial_background(files: Sequence[RawFrame]) -> Dict[str, np.ndarray]:
@@ -249,6 +262,70 @@ def initial_background(files: Sequence[RawFrame]) -> Dict[str, np.ndarray]:
     raws = [read_frame(f.path)[0] for f in files[:11]]
     return {"bg": np.min([r - idl.smooth(r, 20) for r in raws], axis=0),
             "badtest": np.min(raws, axis=0)}
+
+
+def chopid_snr(img: np.ndarray, j: int) -> float:
+    """Return the chop-ID image's value at pixel j over its robust noise.
+
+    Parameters
+    ----------
+    img : ndarray, shape (512, 512)
+        Crude star image (``crude_star_image``); masked pixels are zero or within rounding of
+        zero.
+    j : int
+        Flat index of the maximum.
+
+    Returns
+    -------
+    snr : float
+        ``(img[j] - median) / (1.4826 MAD)`` over the unmasked pixels; NaN when fewer than 100
+        pixels are unmasked or the noise is zero.
+    """
+    scale = float(np.max(np.abs(img)))
+    v = img[np.abs(img) > 1e-9 * scale] if scale > 0 else img[:0]
+    if v.size < 100:
+        return float("nan")
+    med = float(np.median(v))
+    sd = 1.4826 * float(np.median(np.abs(v - med)))
+    return (float(img.flat[j]) - med) / sd if sd > 0 else float("nan")
+
+
+def reject_no_star(states: Sequence["FrameState"], frac: float) -> int:
+    """Skip the frames whose chop-ID maximum is far weaker than the round's star.
+
+    A frame with no star in its aperture's searched region (the star outside it, or lost)
+    still has a maximum, on a hot pixel, a channel edge or noise, and would get a chop state
+    from it. Such frames have an S/N far below the frames with the star.
+
+    Parameters
+    ----------
+    states : sequence of FrameState
+        The round's frame states (changed in place).
+    frac : float
+        A frame is skipped when its ``snr`` is below this fraction of the median ``snr`` of the
+        round's frames under the background limit; 0 or less skips none.
+
+    Returns
+    -------
+    n : int
+        Number of frames skipped: their ``nostar`` is set and their ``star_x``, ``star_y`` set
+        to -1, so ``build_segments`` passes over them as over frames above the background
+        limit.
+    """
+    if frac <= 0:
+        return 0
+    snr = np.array([q.snr for q in states if q.star_x >= 0], dtype=float)
+    snr = snr[np.isfinite(snr)]
+    if snr.size == 0:
+        return 0
+    cut = frac * float(np.median(snr))
+    n = 0
+    for q in states:
+        if q.star_x >= 0 and np.isfinite(q.snr) and q.snr < cut:
+            q.star_x = q.star_y = -1
+            q.nostar = True
+            n += 1
+    return n
 
 
 def frame_states(files: Sequence[RawFrame], lo: int, hi: int, init_bg: np.ndarray,
@@ -343,6 +420,8 @@ def frame_states(files: Sequence[RawFrame], lo: int, hi: int, init_bg: np.ndarra
             j = int(np.argmax(img))
             s.star_y, s.star_x = divmod(j, img.shape[1])
             s.stripe = float(img[126:131, 50:101].mean())
+            if not st["set_chop_via_bg"]:
+                s.snr = chopid_snr(img, j)
             last_kept = (i, data, bg, img)
         out.append(s)
     if images is not None and last_kept is not None:
