@@ -484,6 +484,9 @@ def parallactic_angles(states: Sequence[FrameState], ra_hours: float, dec_deg: f
     """
     from astropy import units as u
     from astropy.time import Time
+    from astropy.utils import iers
+
+    iers.conf.auto_download = False
 
     out = []
     good = [i for i, s in enumerate(states) if s.date not in ("None", "") and s.time_end not in ("None", "")]

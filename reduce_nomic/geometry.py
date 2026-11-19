@@ -221,7 +221,8 @@ def align_cube(cube: np.ndarray, st: Dict, ref: Optional[np.ndarray] = None) -> 
         Each frame shifted by ``fshift(-dx, -dy)``, where (dx, dy) come from the subpixel peak of
         ``crosscorr(ref, work, /CUT)`` as in IDL. The work image is the frame clipped at 0 (NaN
         counting as 0), high-passed, smoothed, with rows 0-20 and everything beyond
-        ``align_radius_thresh`` of the center set to 0.
+        ``align_radius_thresh`` of the center set to 0. A float32 input cube is overwritten
+        and returned, to save memory.
     shifts : ndarray, shape (m, 2)
         The applied shifts ``(-dx, -dy)`` in pixels.
     """
@@ -230,9 +231,10 @@ def align_cube(cube: np.ndarray, st: Dict, ref: Optional[np.ndarray] = None) -> 
         ref = gaussian_reference(r)
     yy, xx = np.mgrid[0:2 * r, 0:2 * r]
     outside = np.hypot(xx - r, yy - r) > float(st["align_radius_thresh"])
-    out = np.empty(cube.shape, dtype=np.float32)
+    out = cube if cube.dtype == np.float32 else np.empty(cube.shape, dtype=np.float32)
     shifts = np.zeros((cube.shape[0], 2))
-    for i, frame in enumerate(cube):
+    for i in range(cube.shape[0]):
+        frame = np.asarray(cube[i], dtype=np.float64)
         w = np.where(np.isfinite(frame), np.maximum(frame, 0.0), 0.0)
         if st["align_filter"]:
             w = w - idl.smooth(w, int(st["align_filter_width"]), nan=True)
@@ -268,23 +270,28 @@ def center_cube(cube: np.ndarray, st: Dict, rng: np.random.Generator, n_draw: in
     centered : ndarray, shape (m, 2 radius, 2 radius)
         Every frame shifted by ``fshift(radius - x - 0.5, radius - y - 0.5)``, where (x, y) is
         the ``cntrd`` centroid (FWHM 7) of the high-passed median, near its maximum within 50 px
-        of the center.
+        of the center. The median is taken over the central 256x256 pixels only, which holds
+        every pixel the 50-px zone and the 25-px smoothing use, so the result is unchanged. A
+        float32 input cube is overwritten and returned.
     center : tuple of float
         The centroid (x, y) found, in pixels.
     """
     r = int(st["radius"])
     m = cube.shape[0]
     idx = np.arange(m) if n_draw == 0 else np.clip(idl.idl_round(m * rng.random(n_draw)), 0, m - 1)
-    med = idl.median(cube[idx], axis=0, even=True)
+    h = min(128, r)
+    o = r - h
+    med = idl.median(cube[idx, o:o + 2 * h, o:o + 2 * h], axis=0, even=True)
     med = med - idl.smooth(med, 25, nan=True)
-    yy, xx = np.mgrid[0:2 * r, 0:2 * r]
-    med[np.hypot(xx - r, yy - r) > 50] = 0.0
-    iy, ix = divmod(int(np.nanargmax(med)), 2 * r)
+    yy, xx = np.mgrid[0:2 * h, 0:2 * h]
+    med[np.hypot(xx - h, yy - h) > 50] = 0.0
+    iy, ix = divmod(int(np.nanargmax(med)), 2 * h)
     xc, yc = idl.cntrd(np.nan_to_num(med, nan=0.0), ix, iy, 7.0)
     if xc < 0:
         raise RuntimeError("cntrd failed in the center stage")
+    xc, yc = xc + o, yc + o
     dx, dy = float(r) - xc - 0.5, float(r) - yc - 0.5
-    out = np.empty(cube.shape, dtype=np.float32)
-    for i, f in enumerate(cube):
-        out[i] = idl.fshift(f, dx, dy)
+    out = cube if cube.dtype == np.float32 else np.empty(cube.shape, dtype=np.float32)
+    for i in range(m):
+        out[i] = idl.fshift(np.asarray(cube[i], dtype=np.float64), dx, dy)
     return out, (xc, yc)

@@ -171,10 +171,8 @@ def _chunk_task(args) -> Dict:
     coa = np.asarray(coadds[lo:hi])[sel_rows]
     exp = np.asarray(exptimes[lo:hi])[sel_rows]
     aligned, shifts = geometry.align_cube(cube, st)
-    del cube
     rng = np.random.default_rng([int(st["seed"]), c, cn])
     centered, center = geometry.center_cube(aligned, st, rng)
-    del aligned
     sel = select.measure_and_select(centered, ang, st, cn, pre=True)
     res = {"chunk": c, "cn": cn, "n_in": int(centered.shape[0]), "bad": sel.bad.tolist(),
            "shifts": shifts.tolist(), "center": list(center), "corrs": sel.corrs.tolist(),
