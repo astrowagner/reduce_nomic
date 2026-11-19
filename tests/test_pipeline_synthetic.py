@@ -97,3 +97,17 @@ def test_synthetic_night_display_and_refusal(tmp_path, monkeypatch):
     import pytest
     with pytest.raises(FileExistsError):
         reduce(st, "left", workers=2, out_dir=out)
+
+
+def test_work_lock_refuses_second_run(tmp_path):
+    import fcntl
+    import pytest
+    root = str(tmp_path / "archive")
+    make_night(root, n=60)
+    work = tmp_path / "work"
+    work.mkdir()
+    held = open(work / "lock", "a")
+    fcntl.flock(held.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    st = load_settings("Fake_1", nights_json=str(tmp_path / "none.json"), overrides={"archive": root, "obj": "fakestar"})
+    with pytest.raises(RuntimeError, match="another run"):
+        reduce(st, "left", workers=1, out_dir=str(tmp_path / "out"), work_dir=str(work))

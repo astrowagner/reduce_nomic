@@ -418,6 +418,8 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
 
     Notes
     -----
+    A run holds an exclusive lock on ``<work_dir>/lock`` (released when it ends, however it ends)
+    and refuses to start when another run holds it or when any of its outputs already exist.
     Outputs, in ``out_dir``, with the IDL predecessor's names:
     ``<night>_<side>_cube<n>_align_cen_clean_bin.fits`` (frames, 2 radius x 2 radius, star at
     (radius - 0.5, radius - 0.5)), ``<night>_<side>_angles<n>_clean_bin.fits`` (parallactic
@@ -446,6 +448,12 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
     if present:
         raise FileExistsError(f"{len(present)} outputs already exist in {out_dir} (e.g. {present[0]}); "
                               "move them or give another --out")
+    import fcntl
+    lock = open(os.path.join(work, "lock"), "a")
+    try:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        raise RuntimeError(f"another run is using {work}; give another --work or wait for it to finish")
     disp = None
     if st.get("display"):
         from .display import Display
