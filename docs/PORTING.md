@@ -47,4 +47,13 @@ These quirks change results, so the port keeps them by default:
 - `tests/test_idl.py` checks every primitive against its IDL definition.
 - `tests/test_pipeline_synthetic.py` reduces a synthetic chopping star end to end. The final PSFs come out centered at (499.505, 499.544) and (499.496, 499.500), against an expected (499.5, 499.5), with FWHM 15.1 px against 15.0 px injected.
 
-**Still to do.** Reduce full nights on patrick and compare with the IDL products: frame counts, angles, the median PSF and its FWHM (about 16.7 px), and the frames kept by the selection.
+**Real data (2026-11-18, the sandbox on patrick).**
+- **`fix_pa`:** the recomputed parallactic angles of 25 Procyon_17 frames match LBT_PARA to within 0.001–0.010° over 11–54°.
+- **Frame selection:** the IDL start positions translate to the expected frame numbers. ε Eri starts at 3900, β Leo_9 at 3000, Procyon_22 at 2760, τ Cet_2 at 638 (its acquisition frames were moved out) and β UMa_8 at 156895.
+- **Smoke run:** Procyon_13, left aperture (double-sided, left-right chop), 120 raw frames (20000–20119) with `prebin=5`, ran end to end in 11 s on 2 cores.
+  - The median-PSF cores (64×64) correlate at 0.9965 (chop A) and 0.9978 (chop B) with the IDL full-night PSFs.
+  - Gaussian FWHM: 20.8 and 19.1 px in the port, against 21.9 and 20.0 px in IDL. The port's are sharper, as expected from 10 s of data against a whole night.
+
+**Still to do.** Reduce full nights on patrick and compare with the IDL products: frame counts, angles, the median PSF, and the frames kept by the selection.
+
+**Memory.** A worker holds one chunk of up to 1000 frames (1 GB) plus one chop's cut cube (up to about 2 GB at radius 500). Plan about 4 GB per worker.
