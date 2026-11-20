@@ -9,6 +9,7 @@ the sorting, and every frame still in the folder from that number on is used.
 from __future__ import annotations
 
 import csv
+import functools
 import os
 import re
 from dataclasses import dataclass
@@ -69,6 +70,30 @@ def list_raw(folder: str) -> List[RawFrame]:
     return out
 
 
+@functools.lru_cache(maxsize=4)
+def _moves(moves_log: str, mtime_ns: int, size: int) -> Tuple[Tuple[str, str, str], ...]:
+    """Read the sorting's move log once per file version.
+
+    Parameters
+    ----------
+    moves_log : str
+        The move log (``when, id, src, dst``).
+    mtime_ns, size : int
+        The file's modification time in nanoseconds and size in bytes, so that a changed file
+        is read again.
+
+    Returns
+    -------
+    rows : tuple of tuple of str
+        ``(id, src, dst)`` of the moves that count: rows of ``id`` ``park``, ``undone:`` rows and
+        the moves they undo are left out.
+    """
+    rows = list(csv.DictReader(open(moves_log)))
+    undone = {(r["src"][7:], r["dst"][7:]) for r in rows if r["src"].startswith("undone:")}
+    return tuple((r["id"], r["src"], r["dst"]) for r in rows
+                 if r["id"] != "park" and not r["src"].startswith("undone:") and (r["src"], r["dst"]) not in undone)
+
+
 def presort_names(archive: str, rel_dir: str, moves_log: str, log_rel_dir: Optional[str] = None) -> List[str]:
     """Rebuild a folder's file names as they were before the archive was sorted.
 
@@ -93,15 +118,12 @@ def presort_names(archive: str, rel_dir: str, moves_log: str, log_rel_dir: Optio
     now = {f.path.rsplit("/", 1)[1] for f in list_raw(os.path.join(archive, rel_dir))}
     log_dir = log_rel_dir or rel_dir
     if os.path.exists(moves_log):
-        rows = list(csv.DictReader(open(moves_log)))
-        undone = {(r["src"][7:], r["dst"][7:]) for r in rows if r["src"].startswith("undone:")}
-        for r in rows:
-            if r["id"] == "park" or r["src"].startswith("undone:") or (r["src"], r["dst"]) in undone:
-                continue
-            if os.path.dirname(r["src"]) == log_dir:
-                now.add(os.path.basename(r["src"]))
-            if os.path.dirname(r["dst"]) == log_dir:
-                now.discard(os.path.basename(r["dst"]))
+        st = os.stat(moves_log)
+        for _, src, dst in _moves(moves_log, st.st_mtime_ns, st.st_size):
+            if os.path.dirname(src) == log_dir:
+                now.add(os.path.basename(src))
+            if os.path.dirname(dst) == log_dir:
+                now.discard(os.path.basename(dst))
 
     def key(n: str) -> Tuple[str, int]:
         m = RAW.match(n)

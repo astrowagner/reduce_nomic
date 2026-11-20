@@ -691,6 +691,49 @@ def write_frame_tags(stem: str, angles, exptimes, corrs, noises, coronoise, peak
                               (f"{v:.6g}" if isinstance(v, (float, np.floating)) else str(v)) for v in row) + "\n")
 
 
+def planned_outputs(pre: str) -> List[str]:
+    """List the product file names one run writes.
+
+    Parameters
+    ----------
+    pre : str
+        Product prefix ``<night>_<side>``.
+
+    Returns
+    -------
+    names : list of str
+        The badmap, the summary and, for chops 1 and 2, the cubes, PSFs, angles, coadds and frame
+        tags listed in ``reduce``; a run refuses to start when any of them exists.
+    """
+    return [f"{pre}_badmap.fits", f"{pre}_summary.json"] + [
+        f"{pre}_{name}" for cn in (1, 2) for name in (
+            f"cube{cn}_align_cen_clean_bin.fits", f"cube{cn}_align_cen_clean_median_PSF.fits",
+            f"cube{cn}_align_cen_median_PSF.fits", f"angles{cn}_clean_bin.fits",
+            f"angles{cn}_clean_bin.csv", f"coadds{cn}_clean_bin.csv",
+            f"cube{cn}_align_cen_bin.fits", f"angles{cn}_bin.fits", f"frametags{cn}_bin.fits",
+            f"frametags{cn}_bin.csv", f"coadds{cn}_bin.csv")]
+
+
+def sky_folders(st: Dict) -> List[str]:
+    """List a night's sky folders in round order, as the IDL predecessor names them.
+
+    Parameters
+    ----------
+    st : dict
+        Settings: ``n_sky``, ``archive`` and ``sky_dirs`` (explicit folders relative to the
+        night folder; an old folder name after ``../`` is renamed, ``names.current_rel``).
+
+    Returns
+    -------
+    folders : list of str
+        ``n_sky`` folders relative to the night folder: ``sky_dirs`` when given, otherwise
+        ``skys1``, ``skys2``, ``skys3``, ``skys3``, ... (round k reads ``skys<min(k, 3)>``, as IDL).
+    """
+    n = int(st["n_sky"])
+    dirs = st.get("sky_dirs") or [f"skys{min(k, 3)}" for k in range(1, n + 1)]
+    return [names.current_rel(st["archive"], d) for d in dirs][:n]
+
+
 def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[str] = None,
            work_dir: Optional[str] = None) -> Dict:
     """Reduce one night and aperture.
@@ -744,13 +787,7 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
     pre = f"{night}_{side}"
     t0 = time.time()
     chopsub.check_options(st)
-    planned = [f"{pre}_badmap.fits", f"{pre}_summary.json"] + [
-        f"{pre}_{name}" for cn in (1, 2) for name in (
-            f"cube{cn}_align_cen_clean_bin.fits", f"cube{cn}_align_cen_clean_median_PSF.fits",
-            f"cube{cn}_align_cen_median_PSF.fits", f"angles{cn}_clean_bin.fits",
-            f"angles{cn}_clean_bin.csv", f"coadds{cn}_clean_bin.csv",
-            f"cube{cn}_align_cen_bin.fits", f"angles{cn}_bin.fits", f"frametags{cn}_bin.fits",
-            f"frametags{cn}_bin.csv", f"coadds{cn}_bin.csv")]
+    planned = planned_outputs(pre)
     present = [f for f in planned if os.path.exists(os.path.join(out_dir, f))]
     if present:
         raise FileExistsError(f"{len(present)} outputs already exist in {out_dir} (e.g. {present[0]}); "
@@ -771,9 +808,8 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
     end = st["end_frame_left"] if side == "left" else st["end_frame_right"]
     sci = select_science_frames(archive, night, start, end, frame_range=st.get("frames"),
                                 old_night=st.get("night_old") or night)
-    sky_dirs = [names.current_rel(archive, d) for d in st.get("sky_dirs") or
-                [f"skys{min(k, 3)}" for k in range(1, int(st["n_sky"]) + 1)]]
-    sky_lists = [list_raw(os.path.join(archive, night, d)) for d in sky_dirs[:int(st["n_sky"])]]
+    sky_dirs = sky_folders(st)
+    sky_lists = [list_raw(os.path.join(archive, night, d)) for d in sky_dirs]
     master = np.asarray(fits.getdata(os.path.join(archive, st["badmap_master"])), dtype=np.float64)
     rounds = [combine_round(sci, st, False, master, work, f"{side}_round0", workers)]
     for k, files in enumerate(sky_lists, 1):
@@ -854,7 +890,7 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
     write_fits(os.path.join(out_dir, f"{pre}_badmap.fits"), badmap)
     summary = {"night": night, "night_old": st.get("night_old") or night, "side": side,
                "settings_source": settings.source, "n_raw": len(sci),
-               "sky_dirs": sky_dirs[:int(st["n_sky"])], "n_segments": n, "chunks": len(chunks),
+               "sky_dirs": sky_dirs, "n_segments": n, "chunks": len(chunks),
                "nostar_frames": int(rounds[0]["nostar"]),
                "nostar_cut": None if not np.isfinite(rounds[0]["nostar_cut"]) else round(float(rounds[0]["nostar_cut"]), 2),
                "positions": raw_pos, "cubes": {}}

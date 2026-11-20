@@ -33,6 +33,17 @@ reduce-nomic Procyon_20230406 --workers 16 --display  # live view (pip install -
   - `_summary.json`.
 - **Intermediates:** memory-mapped files in `reduced_py/work_<side>/`, which can be deleted after a run.
 
+## Batch
+
+```
+python3 tools/preflight_nights.py ARCHIVE preflight.csv            # every night: settings, frames, skies, scratch, time
+python3 tools/batch_reduce.py PLAN.csv ARCHIVE --work SCRATCH --workers 64 [--dry-run] [--only ID ...]
+```
+
+- **Pre-flight:** for every night with an IDL object block (`--all-nights` for all), reports the settings' source, the science frames selected, the sky folders and their frames (a missing one stops a run), existing products, the scratch needed and the time, without reading any frame.
+- **Plan:** one row per run, in order: `id`, `night`, `side`, `out` (output folder in the night folder, default `reduced_py`), `set` (JSON object of settings), `note`.
+- **Driver:** runs each row as its own `reduce_nomic.cli` process, with its output in `<out>/<night>_<side>_run_<UTC>.log` and a row in `<plan>_log.csv`. A row whose summary exists is done and skipped, so a rerun resumes; a row with only some products is reported and left alone. No run starts with less than `--min-free-gb` (1500) free. All runs share the work folder `SCRATCH`, where each round recreates its memmaps, so the scratch stays at the size of the largest run.
+
 ## Stages
 
 | Module | IDL step | What it does |
