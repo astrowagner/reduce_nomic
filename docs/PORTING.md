@@ -31,6 +31,7 @@ These quirks change results, so the port keeps them by default:
 - **Lookups under the old name:** the object blocks in `config/nights_idl.json` and the sorting's move log predate the renaming, so the port looks a night up there under its old name (`names.resolve`; the settings' `night_old`).
 - **Paths and products under the current name:** frames are read from, and products written to, the folder's current name, and the products of runs after the renaming carry it as their prefix (`Procyon_20230205_left_...`). Products made before, such as run7's in `Procyon_20230205/reduced_py/`, keep the old prefix, as do IDL's in `reduced/`; `tools/compare_idl_products.py --idl-night Procyon_13` compares across the two.
 - **Either name on the command line,** and an old folder name after `../` in `sky_dirs` is renamed.
+- **Checked on patrick** (`tools/check_selection_after_rename.py`): for all 75 IDL nights with a folder, both sides (90 night-sides), the frames selected after the renaming equal, frame for frame, those selected by the old names in the old layout, rebuilt from symbolic links. On 9 night-sides (β Leo 8 and 9, β UMa 8, ε Eri, Procyon_7, Procyon_22 and τ Ceti 2) reading the move log under the new name would have shifted the first frame by 2 to 4,000 frames.
 
 **File order.** IDL's `FILE_SEARCH(/nosort)` lists files unsorted on patrick's RAID. The port always sorts by stem and frame number, as the Mac's volume did.
 
