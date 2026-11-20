@@ -122,7 +122,9 @@ def test_port_decisions_apply_after_the_idl_block(tmp_path):
     assert st.radius == 7
 
 
-def test_beta_uma_8_decision_is_recorded():
-    """The repository's decisions file gives beta UMa 2023-02-05 its full frame range."""
+def test_recorded_decisions():
+    """The repository's decisions file gives beta UMa 2023-02-05 its full frame range and Betelgeuse its settings."""
     st = load_settings("BetaUma_8", None, {"archive": "/nonexistent"})
     assert st.frames == [155443, 195100] and st.source.endswith("nights_port.json:BetaUma_8")
+    st = load_settings("Betelgeuse", None, {"archive": "/nonexistent"})
+    assert st.frames == [2529, 19008] and st.obj == "alpha ori" and st.source == "defaults + nights_port.json:Betelgeuse"
