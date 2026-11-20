@@ -69,7 +69,7 @@ def list_raw(folder: str) -> List[RawFrame]:
     return out
 
 
-def presort_names(archive: str, rel_dir: str, moves_log: str) -> List[str]:
+def presort_names(archive: str, rel_dir: str, moves_log: str, log_rel_dir: Optional[str] = None) -> List[str]:
     """Rebuild a folder's file names as they were before the archive was sorted.
 
     Parameters
@@ -80,6 +80,9 @@ def presort_names(archive: str, rel_dir: str, moves_log: str) -> List[str]:
         Folder relative to the archive, e.g. ``EpsEri/raw``.
     moves_log : str
         The sorting's move log (``when, id, src, dst``); rows undone later are ignored.
+    log_rel_dir : str, optional
+        The folder as the move log names it, under the name it had before the 2026-11-20
+        renaming, e.g. ``EpsEri_3/raw`` for ``EpsEri_20211220/raw``; default ``rel_dir``.
 
     Returns
     -------
@@ -88,15 +91,16 @@ def presort_names(archive: str, rel_dir: str, moves_log: str) -> List[str]:
         minus those moved in), sorted by stem and frame number.
     """
     now = {f.path.rsplit("/", 1)[1] for f in list_raw(os.path.join(archive, rel_dir))}
+    log_dir = log_rel_dir or rel_dir
     if os.path.exists(moves_log):
         rows = list(csv.DictReader(open(moves_log)))
         undone = {(r["src"][7:], r["dst"][7:]) for r in rows if r["src"].startswith("undone:")}
         for r in rows:
             if r["id"] == "park" or r["src"].startswith("undone:") or (r["src"], r["dst"]) in undone:
                 continue
-            if os.path.dirname(r["src"]) == rel_dir:
+            if os.path.dirname(r["src"]) == log_dir:
                 now.add(os.path.basename(r["src"]))
-            if os.path.dirname(r["dst"]) == rel_dir:
+            if os.path.dirname(r["dst"]) == log_dir:
                 now.discard(os.path.basename(r["dst"]))
 
     def key(n: str) -> Tuple[str, int]:
@@ -108,7 +112,8 @@ def presort_names(archive: str, rel_dir: str, moves_log: str) -> List[str]:
 
 def select_science_frames(archive: str, night: str, start_pos: int = 0, end_pos: float = 99e9,
                           moves_log: Optional[str] = None,
-                          frame_range: Optional[Tuple[int, int]] = None) -> List[RawFrame]:
+                          frame_range: Optional[Tuple[int, int]] = None,
+                          old_night: Optional[str] = None) -> List[RawFrame]:
     """Select a night's science frames as the IDL predecessor's position cut did.
 
     Parameters
@@ -116,7 +121,7 @@ def select_science_frames(archive: str, night: str, start_pos: int = 0, end_pos:
     archive : str
         Archive root.
     night : str
-        Night folder name.
+        Night folder's current name.
     start_pos : int, default 0
         IDL ``start_frame_<side>``: list position of the first frame in the pre-sorting folder.
     end_pos : float, default 99e9
@@ -125,6 +130,9 @@ def select_science_frames(archive: str, night: str, start_pos: int = 0, end_pos:
         The sorting's move log; default ``<archive>/_raw_inventory/sorting/moves_log.csv``.
     frame_range : tuple of int, optional
         ``(first, last)`` frame numbers to use instead of the position cut.
+    old_night : str, optional
+        The folder's name before the 2026-11-20 renaming, under which the move log lists its
+        moves (``names.resolve``); default ``night``.
 
     Returns
     -------
@@ -139,7 +147,7 @@ def select_science_frames(archive: str, night: str, start_pos: int = 0, end_pos:
         return [f for f in current if lo <= f.num <= hi]
     if moves_log is None:
         moves_log = os.path.join(archive, "_raw_inventory", "sorting", "moves_log.csv")
-    old = presort_names(archive, rel, moves_log)
+    old = presort_names(archive, rel, moves_log, f"{old_night or night}/raw")
     if not old:
         return []
     start_pos = int(start_pos)

@@ -17,7 +17,8 @@ Parameters
 ARCHIVE : str
     Archive root (holding the night folders and ``calib/``).
 NIGHT : str
-    Night folder name, e.g. ``Procyon_13``.
+    Night folder name, current (``Procyon_20230205``) or before the 2026-11-20 renaming
+    (``Procyon_13``).
 SIDE : str
     ``left`` or ``right``.
 OUT_CSV : str
@@ -85,7 +86,7 @@ def main(argv=None) -> int:
         variants[name] = over
     st0 = dict(load_settings(a.night, None, {"archive": a.archive}).values, side=a.side)
     nbg = int(st0["nbg"])
-    files = list_raw(os.path.join(a.archive, a.night, "raw"))
+    files = list_raw(os.path.join(a.archive, st0["night"], "raw"))
     n = len(files)
     positions = list(range(nbg + 1, n - 1 - nbg, a.step))
     last = len(positions) if a.count is None else min(len(positions), a.first + a.count)

@@ -17,7 +17,8 @@ Parameters
 ARCHIVE : str
     Archive root (the folder holding the night folders and ``calib/``).
 NIGHT : str
-    Night folder name, e.g. ``Procyon_13``.
+    Night folder name, current (``Procyon_20230205``) or before the 2026-11-20 renaming
+    (``Procyon_13``).
 OUT_CSV : str
     CSV file to append to (created with a header when absent). Columns: ``side``, ``block``,
     ``pos`` (position in the sorted raw list), ``num`` (frame number), ``median`` (frame median,
@@ -90,7 +91,7 @@ def main(argv=None) -> int:
         except ValueError:
             over[k.strip()] = v
     st = dict(load_settings(a.night, None, over).values)
-    files = list_raw(os.path.join(a.archive, a.night, "raw"))
+    files = list_raw(os.path.join(a.archive, st["night"], "raw"))
     n = len(files)
     nbg = int(st["nbg"])
     starts = np.linspace(nbg + 1, n - 2 - nbg - a.block, a.samples).astype(int)

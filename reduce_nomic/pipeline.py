@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import numpy as np
 from astropy.io import fits
 
-from . import binning, chopsub, combine, geometry, idl, select
+from . import binning, chopsub, combine, geometry, idl, names, select
 from .config import Settings
 from .frames import RawFrame, list_raw, select_science_frames
 
@@ -769,8 +769,10 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
     st["_disp"] = disp
     start = st["start_frame_left"] if side == "left" else st["start_frame_right"]
     end = st["end_frame_left"] if side == "left" else st["end_frame_right"]
-    sci = select_science_frames(archive, night, start, end, frame_range=st.get("frames"))
-    sky_dirs = st.get("sky_dirs") or [f"skys{min(k, 3)}" for k in range(1, int(st["n_sky"]) + 1)]
+    sci = select_science_frames(archive, night, start, end, frame_range=st.get("frames"),
+                                old_night=st.get("night_old") or night)
+    sky_dirs = [names.current_rel(archive, d) for d in st.get("sky_dirs") or
+                [f"skys{min(k, 3)}" for k in range(1, int(st["n_sky"]) + 1)]]
     sky_lists = [list_raw(os.path.join(archive, night, d)) for d in sky_dirs[:int(st["n_sky"])]]
     master = np.asarray(fits.getdata(os.path.join(archive, st["badmap_master"])), dtype=np.float64)
     rounds = [combine_round(sci, st, False, master, work, f"{side}_round0", workers)]
@@ -850,7 +852,8 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
     results = _run(_chunk_task, tasks, _mem_workers(workers, per_task, label), label, show, disp,
                    sizes=sizes, unit="frames")
     write_fits(os.path.join(out_dir, f"{pre}_badmap.fits"), badmap)
-    summary = {"night": night, "side": side, "settings_source": settings.source, "n_raw": len(sci),
+    summary = {"night": night, "night_old": st.get("night_old") or night, "side": side,
+               "settings_source": settings.source, "n_raw": len(sci),
                "sky_dirs": sky_dirs[:int(st["n_sky"])], "n_segments": n, "chunks": len(chunks),
                "nostar_frames": int(rounds[0]["nostar"]),
                "nostar_cut": None if not np.isfinite(rounds[0]["nostar_cut"]) else round(float(rounds[0]["nostar_cut"]), 2),

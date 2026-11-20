@@ -13,6 +13,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from . import names
+
 #: Settings of the IDL predecessor used by the reduction stages, with their default values.
 DEFAULTS: Dict[str, Any] = {
     # combine (coadd frames within each chop)
@@ -61,7 +63,9 @@ DEFAULTS: Dict[str, Any] = {
 
 #: Settings that exist only in the port, with their defaults.
 PORT_DEFAULTS: Dict[str, Any] = {
-    "night": "",            # night folder name in the archive
+    "night": "",            # night folder's current name in the archive (names.resolve)
+    "night_old": "",        # its name before the 2026-11-20 renaming, used by the IDL object
+                            # blocks and the sorting's move log
     "archive": "/mnt/RAID64TB/NOMIC",
     "manifest": "_raw_inventory/tables/raw_frame_manifest_sorted.csv",
     "badmap_master": "calib/master_badmap_2022.fits",
@@ -146,7 +150,9 @@ def load_settings(night: str, nights_json: Optional[str] = None, overrides: Opti
     Parameters
     ----------
     night : str
-        Night folder name, e.g. ``Procyon_17``.
+        Night folder name, current (``Procyon_20230406``) or before the 2026-11-20 renaming
+        (``Procyon_17``), resolved through ``<archive>/folder_name_map.csv`` (``names.resolve``)
+        with the archive of ``overrides`` or ``PORT_DEFAULTS``.
     nights_json : str, optional
         Path of the extracted object blocks; default ``config/nights_idl.json`` beside the package.
     overrides : dict, optional
@@ -155,27 +161,29 @@ def load_settings(night: str, nights_json: Optional[str] = None, overrides: Opti
     Returns
     -------
     settings : Settings
-        The merged settings. ``postpoly_bgsub`` follows ``normalize_middle`` unless the block
-        sets it, as in IDL.
+        The merged settings. ``night`` is the folder's current name and ``night_old`` its name
+        before the renaming, under which the object block is looked up. ``postpoly_bgsub``
+        follows ``normalize_middle`` unless the block sets it, as in IDL.
     """
     if nights_json is None:
         nights_json = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "nights_idl.json")
     values = dict(DEFAULTS)
     values.update(PORT_DEFAULTS)
-    values["night"] = night
+    nn = names.resolve((overrides or {}).get("archive", values["archive"]), night)
+    values["night"], values["night_old"] = nn.folder, nn.old
     unevaluated: Dict[str, str] = {}
     source = "defaults"
     if os.path.exists(nights_json):
         blocks = json.load(open(nights_json))
-        if night in blocks:
-            block = blocks[night]
+        if nn.old in blocks:
+            block = blocks[nn.old]
             for k, v in block["settings"].items():
                 if k not in IGNORED:
                     values[k] = v
             if "normalize_middle" in block["settings"] and "postpoly_bgsub" not in block["settings"]:
                 values["postpoly_bgsub"] = block["settings"]["normalize_middle"]
             unevaluated = {k: v for k, v in block.get("unevaluated", {}).items() if k not in IGNORED}
-            source = f"{os.path.basename(nights_json)}:{night}"
+            source = f"{os.path.basename(nights_json)}:{nn.old}"
     if overrides:
         values.update(overrides)
     return Settings(values=values, unevaluated=unevaluated, source=source)

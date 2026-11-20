@@ -11,18 +11,20 @@ pip install -e .            # numpy, scipy, astropy
 ## Run
 
 ```
-reduce-nomic Procyon_17 --workers 16 --archive /mnt/RAID64TB/NOMIC
-reduce-nomic Procyon_17 --dry-run                     # settings and frame selection only
-reduce-nomic Procyon_17 --set radius=400 --set sky_dirs='["skys1"]'
-reduce-nomic Procyon_17 --workers 16 --display        # live view (pip install -e '.[display]')
+reduce-nomic Procyon_20230406 --workers 16 --archive /mnt/RAID64TB/NOMIC
+reduce-nomic Procyon_17 --dry-run                     # the same night by its old name; settings and frames only
+reduce-nomic Procyon_20230406 --set radius=400 --set sky_dirs='["skys1"]'
+reduce-nomic Procyon_20230406 --workers 16 --display  # live view (pip install -e '.[display]')
 ```
+
+- **Night names:** the archive's night folders were renamed on 2026-11-20 from the IDL predecessor's names (`Procyon_17`) to `<target>_<UT date>` (`Procyon_20230406`); `<archive>/folder_name_map.csv` lists both and `FOLDER_NAMES.md` beside it explains the convention. A night can be given by either name (`reduce_nomic.names`). Its settings and the sorting's move log are looked up under the old name, and new products are named with the current one.
 
 - **Progress:** every stage prints progress lines, in frames or segments, with an estimate of the time remaining.
 - **Live view:** `--display` opens a window of the KLIP-TPE live window's size, 1850 x 990 pixels (shrunk to fit a smaller screen, fixed size). The top row follows the chop identification of each round: the image the latest frame's chop state was decided from (rolling background subtracted, destriped, masked) with its detected star, the detected star positions colored by chop state, the value that decides the chop state over the last 600 frames, and every frame's chop-ID peak S/N (frames with no star in the searched region show as a dip and are skipped, in gray). The bottom row shows the chop-subtracted frame and its high-pass, each chunk's centered median and its frame selection; a strip below lists every stage's progress. The window is redrawn in place at most once per second without being raised or taking the focus, and the final view is written to `<night>_<side>_display.png`. It is drawn by its own process, so it stays responsive, and closing it or losing the X connection (which ends any Tk program) does not stop the reduction. Without an X display (or Tk) only that PNG is written, at most every 10 s. `python3 tools/preview_display.py NEW_DIR` renders the view for a synthetic night.
 - **Reruns:** a run refuses to start if its outputs already exist.
 
 - **Settings:** start from the IDL defaults, then apply the night's object block from `reduce_nomic.pro`, which `tools/extract_idl_settings.py` extracts to `config/nights_idl.json`. `--set` overrides any setting by name.
-- **Outputs:** go to `<archive>/<night>/reduced_py/` and never overwrite an existing file.
+- **Outputs:** go to `<archive>/<night>/reduced_py/`, `<night>` being the folder's current name, and never overwrite an existing file.
   - **For KLIP-TPE**, which makes the final frame selection itself with its `corr_thresh`, `noise_max` and `coronoise_max`: every binned frame after the pre-clean.
     - `<night>_<side>_cube<n>_align_cen_bin.fits`, peak-scaled.
     - `_angles<n>_bin.fits`.

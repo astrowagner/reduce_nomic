@@ -6,10 +6,12 @@ Usage
                                 [--out DIR] [--work DIR] [--frames FIRST LAST]
                                 [--set NAME=VALUE ...] [--nights-json PATH] [--display] [--dry-run]
 
-NIGHT is the night folder name in the archive (e.g. ``Procyon_17``). Settings come from the IDL
-predecessor's defaults and the night's object block (``config/nights_idl.json``); ``--set``
-overrides any setting by name, with the value parsed as JSON when possible (``--set radius=400
---set sky_dirs='["../Alcor/skys1"]'``). ``--display`` opens a live view of the stages (chop
+NIGHT is the night folder's name in the archive, current (``Procyon_20230406``) or before the
+2026-11-20 renaming (``Procyon_17``); ``<archive>/folder_name_map.csv`` relates the two
+(``reduce_nomic.names``). Settings come from the IDL predecessor's defaults and the night's object
+block (``config/nights_idl.json``, under the old name); ``--set`` overrides any setting by name,
+with the value parsed as JSON when possible (``--set radius=400 --set
+sky_dirs='["../Alcor_20230407/skys1"]'``; an old folder name after ``../`` is renamed too). ``--display`` opens a live view of the stages (chop
 identification, chop subtraction, frame selection, progress) in a window of the KLIP-TPE live
 window's size, 1850 x 990 pixels, shrunk on a smaller screen; it is redrawn without taking the
 focus, and the final view is written to ``<out>/<night>_<side>_display.png``. With no X display
@@ -21,8 +23,8 @@ estimated remaining time are printed for every stage.
 Outputs
 -------
 <out>/<night>_<side>_*.fits, *.csv, *_summary.json
-    The products listed in ``reduce_nomic.pipeline.reduce``; ``<out>`` defaults to
-    ``<archive>/<night>/reduced_py``.
+    The products listed in ``reduce_nomic.pipeline.reduce``, named with the folder's current
+    name; ``<out>`` defaults to ``<archive>/<night>/reduced_py``.
 <work>/
     Memory-mapped intermediates, default ``<out>/work_<side>``; they can be deleted after the run.
 """
@@ -30,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from typing import List
 
@@ -96,6 +99,10 @@ def main(argv: List[str]) -> int:
     if a.display:
         over["display"] = True
     st = load_settings(a.night, a.nights_json, over)
+    if not os.path.isdir(os.path.join(st.archive, st.night)):
+        ap.error(f"no night folder {st.night} in {st.archive}")
+    print(f"night {st.night}" + (f" (named {st.night_old} before the 2026-11-20 renaming)" if st.night_old != st.night
+                                 else "") + f"; settings from {st.source}", flush=True)
     sides = chop_frames_per_side(st)
     if a.dry_run:
         print(json.dumps({"source": st.source, "unevaluated": st.unevaluated, "sides": sides,
@@ -103,7 +110,8 @@ def main(argv: List[str]) -> int:
         for side in sides:
             start = st.start_frame_left if side == "left" else st.start_frame_right
             end = st.end_frame_left if side == "left" else st.end_frame_right
-            fr = select_science_frames(st.archive, a.night, start, end, frame_range=st.values.get("frames"))
+            fr = select_science_frames(st.archive, st.night, start, end, frame_range=st.values.get("frames"),
+                                       old_night=st.night_old)
             print(f"{side}: {len(fr)} science frames" + (f", {fr[0].stem}_{fr[0].num} .. {fr[-1].stem}_{fr[-1].num}" if fr else ""))
         return 0
     from .pipeline import reduce

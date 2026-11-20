@@ -37,7 +37,11 @@ It prints, per side and chop:
   correlation, whether each version's clean keeps the bin (a clean bin within 0.01 degrees),
   and the port's frame tags ``corrs`` and ``noises`` for the bin.
 
-Usage: compare_idl_products.py PORT_DIR IDL_DIR NIGHT [--sides left right] [--worst K]
+Usage: compare_idl_products.py PORT_DIR IDL_DIR NIGHT [--idl-night NAME] [--sides left right] [--worst K]
+
+NIGHT is the prefix of the port's products, the night folder's name when they were made; the IDL
+products carry the folder's name before the 2026-11-20 renaming (``Procyon_13`` for
+``Procyon_20230205``), given with ``--idl-night`` when it differs.
 """
 import argparse
 import os
@@ -219,7 +223,8 @@ def nearest(a: np.ndarray, b: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     return order[pick], np.abs(a - bs[pick])
 
 
-def side_chop(port: str, idl: str, night: str, side: str, cn: int, worst: int = 0) -> List[str]:
+def side_chop(port: str, idl: str, night: str, side: str, cn: int, worst: int = 0,
+              idl_night: Optional[str] = None) -> List[str]:
     """Compare one side and chop; see the module docstring.
 
     Parameters
@@ -227,13 +232,15 @@ def side_chop(port: str, idl: str, night: str, side: str, cn: int, worst: int = 
     port, idl : str
         Folders of the Python and IDL products.
     night : str
-        Night name, the products' prefix.
+        Prefix of the port's products.
     side : str
         ``left`` or ``right``.
     cn : int
         Chop number, 1 or 2.
     worst : int, default 0
         Number of lowest-correlation frame pairs to list.
+    idl_night : str, optional
+        Prefix of the IDL products; default ``night``.
 
     Returns
     -------
@@ -242,23 +249,24 @@ def side_chop(port: str, idl: str, night: str, side: str, cn: int, worst: int = 
     """
     from scipy.io import readsav
     pre = f"{night}_{side}"
+    ipre = f"{idl_night or night}_{side}"
     other = 3 - cn
     out = [f"== {side} chop {'AB'[cn - 1]} (cube{cn})"]
     pa = np.asarray(fits.getdata(os.path.join(port, f"{pre}_angles{cn}_bin.fits")), dtype=float)
-    sv = readsav(os.path.join(idl, f"{pre}_angles{cn}_bin.sav"))
+    sv = readsav(os.path.join(idl, f"{ipre}_angles{cn}_bin.sav"))
     ia = np.asarray(sv[f"angles{cn}"], dtype=float)
-    ia_other = np.asarray(readsav(os.path.join(idl, f"{pre}_angles{other}_bin.sav"))[f"angles{other}"], dtype=float)
+    ia_other = np.asarray(readsav(os.path.join(idl, f"{ipre}_angles{other}_bin.sav"))[f"angles{other}"], dtype=float)
     pcl = np.asarray(fits.getdata(os.path.join(port, f"{pre}_angles{cn}_clean_bin.fits")), dtype=float)
-    icl = np.asarray(readsav(os.path.join(idl, f"{pre}_angles{cn}_clean_bin.sav"))[f"angles{cn}"], dtype=float)
+    icl = np.asarray(readsav(os.path.join(idl, f"{ipre}_angles{cn}_clean_bin.sav"))[f"angles{cn}"], dtype=float)
     tags = fits.getdata(os.path.join(port, f"{pre}_frametags{cn}_bin.fits"))
     pexp = float(np.sum(tags["exptime_s"])) if "exptime_s" in tags.names else float("nan")
     pcoadd = sum(1 for _ in open(os.path.join(port, f"{pre}_coadds{cn}_bin.csv"))) - 1
     out.append(f"  bins: port {nframes(os.path.join(port, f'{pre}_cube{cn}_align_cen_bin.fits'))} ({pa.size} angles), "
-               f"IDL {nframes(os.path.join(idl, f'{pre}_cube{cn}_align_cen_bin.fits'))} ({ia.size} angles)")
+               f"IDL {nframes(os.path.join(idl, f'{ipre}_cube{cn}_align_cen_bin.fits'))} ({ia.size} angles)")
     out.append(f"  kept unbinned frames: port {pcoadd}, IDL {np.asarray(sv[f'coadds{cn}']).size}; "
                f"exposure s: port {pexp:.1f}, IDL {float(np.sum(sv[f'exptimes{cn}'])):.1f}")
     out.append(f"  clean bins: port {nframes(os.path.join(port, f'{pre}_cube{cn}_align_cen_clean_bin.fits'))} "
-               f"({pcl.size} angles), IDL {nframes(os.path.join(idl, f'{pre}_cube{cn}_align_cen_clean_bin.fits'))} "
+               f"({pcl.size} angles), IDL {nframes(os.path.join(idl, f'{ipre}_cube{cn}_align_cen_clean_bin.fits'))} "
                f"({icl.size} angles)")
     j_same, d_same = nearest(pa, ia)
     _, d_other = nearest(pa, ia_other)
@@ -267,7 +275,7 @@ def side_chop(port: str, idl: str, night: str, side: str, cn: int, worst: int = 
     out.append(f"  angle ranges: port {pa.min():.3f}..{pa.max():.3f}, IDL {ia.min():.3f}..{ia.max():.3f}")
     for kind in ("median_PSF", "clean_median_PSF"):
         fp = fits.getdata(os.path.join(port, f"{pre}_cube{cn}_align_cen_{kind}.fits")).astype(float)
-        fi = fits.getdata(os.path.join(idl, f"{pre}_cube{cn}_align_cen_{kind}.fits")).astype(float)
+        fi = fits.getdata(os.path.join(idl, f"{ipre}_cube{cn}_align_cen_{kind}.fits")).astype(float)
         c = fp.shape[0] // 2
         r64 = corr(fp[c - 32:c + 32, c - 32:c + 32], fi[c - 32:c + 32, c - 32:c + 32])
         try:
@@ -278,9 +286,9 @@ def side_chop(port: str, idl: str, night: str, side: str, cn: int, worst: int = 
         except (RuntimeError, ValueError) as err:
             fit = f"Gaussian fit failed: {err}"
         out.append(f"  {kind}: central 64x64 correlation {r64:.4f}; {fit}")
-    ipath = os.path.join(idl, f"{pre}_cube{cn}_align_cen_bin_replace.fits")
+    ipath = os.path.join(idl, f"{ipre}_cube{cn}_align_cen_bin_replace.fits")
     if not os.path.exists(ipath):
-        ipath = os.path.join(idl, f"{pre}_cube{cn}_align_cen_bin.fits")
+        ipath = os.path.join(idl, f"{ipre}_cube{cn}_align_cen_bin.fits")
     cp = central(os.path.join(port, f"{pre}_cube{cn}_align_cen_bin.fits"))
     ci = central(ipath)
     pairs = [(i, int(j)) for i, (j, d) in enumerate(zip(j_same, d_same)) if d < 0.05 and i < cp.shape[0] and j < ci.shape[0]]
@@ -324,12 +332,13 @@ def main(argv: Optional[List[str]] = None) -> None:
     ap.add_argument("port_dir")
     ap.add_argument("idl_dir")
     ap.add_argument("night")
+    ap.add_argument("--idl-night", help="prefix of the IDL products, when it differs from NIGHT")
     ap.add_argument("--sides", nargs="+", default=["left", "right"])
     ap.add_argument("--worst", type=int, default=0, help="list this many lowest-correlation frame pairs")
     a = ap.parse_args(argv)
     for side in a.sides:
         for cn in (1, 2):
-            print("\n".join(side_chop(a.port_dir, a.idl_dir, a.night, side, cn, a.worst)), flush=True)
+            print("\n".join(side_chop(a.port_dir, a.idl_dir, a.night, side, cn, a.worst, a.idl_night)), flush=True)
 
 
 if __name__ == "__main__":

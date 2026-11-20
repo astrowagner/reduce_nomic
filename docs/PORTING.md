@@ -27,6 +27,11 @@ These quirks change results, so the port keeps them by default:
 
 **Frame selection.** IDL cuts the file list by position (`start_frame_left`, ...). The archive was sorted on 2026-11-17/18, which moved files into and out of several `raw/` folders. The port therefore rebuilds the pre-sorting list from the move log, finds the frame number at the IDL position, and keeps the frames still in the folder from that number on. `--frames FIRST LAST` selects explicitly.
 
+**Folder names.** The archive's night folders were renamed on 2026-11-20 from the IDL names to `<target>_<UT date>` (`Procyon_13` → `Procyon_20230205`), with the UT date of the frame file names; `<archive>/folder_name_map.csv` lists both names.
+- **Lookups under the old name:** the object blocks in `config/nights_idl.json` and the sorting's move log predate the renaming, so the port looks a night up there under its old name (`names.resolve`; the settings' `night_old`).
+- **Paths and products under the current name:** frames are read from, and products written to, the folder's current name, and the products of runs after the renaming carry it as their prefix (`Procyon_20230205_left_...`). Products made before, such as run7's in `Procyon_20230205/reduced_py/`, keep the old prefix, as do IDL's in `reduced/`; `tools/compare_idl_products.py --idl-night Procyon_13` compares across the two.
+- **Either name on the command line,** and an old folder name after `../` in `sky_dirs` is renamed.
+
 **File order.** IDL's `FILE_SEARCH(/nosort)` lists files unsorted on patrick's RAID. The port always sorts by stem and frame number, as the Mac's volume did.
 
 **Random draws.** With `center_method=idl`, the center stage takes the median of 100 frames drawn with IDL `randomu`. The port draws with a seeded numpy generator, so its centers differ from IDL's by the scatter between random medians. The default Gaussian center uses every frame and draws nothing.
