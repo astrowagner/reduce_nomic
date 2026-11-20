@@ -4,7 +4,8 @@
 that the reduction stages use, under their IDL names and with their IDL values, so that a night's
 settings can be compared line by line with its IDL object block. ``config/nights_idl.json``,
 written by ``tools/extract_idl_settings.py``, holds the 78 object blocks' overrides. Settings
-that exist only in the port are in ``PORT_DEFAULTS``.
+that exist only in the port are in ``PORT_DEFAULTS``. ``config/nights_port.json`` holds the port's
+own per-night decisions, each with its reason, applied after the IDL block.
 """
 from __future__ import annotations
 
@@ -85,6 +86,9 @@ PORT_DEFAULTS: Dict[str, Any] = {
     "split_median_frames": 20,  # split stage: find the chop positions in the median of up to this many
                                 # frames of each chop at the chunk's start (1 reproduces IDL's single
                                 # frames)
+    "pa_invalid": "recompute",  # frames whose LBT_PARA is unusable (999 or absent): "recompute" from
+                                # DATE-OBS, TIME-END and the headers' pointing, "drop" them, or
+                                # "keep" the values (IDL); unused with fix_pa (combine.repair_angles)
     "seed": 0,              # seed for the random frame draws of the center stage
     "workers": 1,
     "display": False,       # live display (window, or a PNG when no X display is available)
@@ -144,7 +148,8 @@ IGNORED = {"root_dir", "do_combine", "do_chop_sub", "do_split", "do_align", "do_
            "ref_file_r1", "ref_file_r2", "ivert_pos"}
 
 
-def load_settings(night: str, nights_json: Optional[str] = None, overrides: Optional[Dict[str, Any]] = None) -> Settings:
+def load_settings(night: str, nights_json: Optional[str] = None, overrides: Optional[Dict[str, Any]] = None,
+                  port_json: Optional[str] = None) -> Settings:
     """Build the settings of one night from the defaults and its IDL object block.
 
     Parameters
@@ -157,6 +162,9 @@ def load_settings(night: str, nights_json: Optional[str] = None, overrides: Opti
         Path of the extracted object blocks; default ``config/nights_idl.json`` beside the package.
     overrides : dict, optional
         Final overrides by setting name, applied last (e.g. port settings for this run).
+    port_json : str, optional
+        The port's per-night decisions, ``{old name: {"settings": {...}, "reason": "..."}}``,
+        applied after the object block; default ``config/nights_port.json`` beside the package.
 
     Returns
     -------
@@ -165,8 +173,11 @@ def load_settings(night: str, nights_json: Optional[str] = None, overrides: Opti
         before the renaming, under which the object block is looked up. ``postpoly_bgsub``
         follows ``normalize_middle`` unless the block sets it, as in IDL.
     """
+    config_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config")
     if nights_json is None:
-        nights_json = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "nights_idl.json")
+        nights_json = os.path.join(config_dir, "nights_idl.json")
+    if port_json is None:
+        port_json = os.path.join(config_dir, "nights_port.json")
     values = dict(DEFAULTS)
     values.update(PORT_DEFAULTS)
     nn = names.resolve((overrides or {}).get("archive", values["archive"]), night)
@@ -184,6 +195,11 @@ def load_settings(night: str, nights_json: Optional[str] = None, overrides: Opti
                 values["postpoly_bgsub"] = block["settings"]["normalize_middle"]
             unevaluated = {k: v for k, v in block.get("unevaluated", {}).items() if k not in IGNORED}
             source = f"{os.path.basename(nights_json)}:{nn.old}"
+    if os.path.exists(port_json):
+        pblocks = json.load(open(port_json))
+        if nn.old in pblocks:
+            values.update(pblocks[nn.old]["settings"])
+            source = f"{source} + {os.path.basename(port_json)}:{nn.old}"
     if overrides:
         values.update(overrides)
     return Settings(values=values, unevaluated=unevaluated, source=source)

@@ -500,9 +500,13 @@ def combine_round(files: Sequence[RawFrame], st: Dict, sky_round: bool, master: 
     -------
     rnd : dict
         ``badmap``, ``segments`` (in chop-subtraction order), ``seg_path`` (memmap of their
-        frames, in that order), ``n`` (segment count), ``states``, and ``nostar`` and
+        frames, in that order), ``n`` (segment count), ``states``, ``nostar`` and
         ``nostar_cut``: the frames skipped for having no star in the searched region
-        (``combine.reject_no_star``, science round only) and the S/N cut used.
+        (``combine.reject_no_star``, science round only) and the S/N cut used, and ``pa``: the
+        frames whose LBT_PARA is unusable (999 or absent) and what was done with them
+        (``pa_invalid``, ``combine.repair_angles``; science round only, not with ``fix_pa``):
+        ``bad`` (count), ``action``, and when any, ``first`` and ``last`` frame numbers and the
+        pointing ``ra_hours`` and ``dec_deg`` used to recompute them.
     """
     log(f"{tag}: {len(files)} frames, initial background and bad-pixel map")
     init = combine.initial_background(files)
@@ -531,8 +535,20 @@ def combine_round(files: Sequence[RawFrame], st: Dict, sky_round: bool, master: 
         if disp is not None:
             disp.mark_no_star([q.num for q in states if q.nostar], cut)
     angles = None
+    pa = {"bad": 0, "action": "none"}
     if st["fix_pa"]:
         angles = combine.parallactic_angles(states, float(st["ra"]), float(st["dec"]), float(st["lat"]), float(st["lng"]))
+    elif not sky_round and any(not combine.valid_angle(q.angle) for q in states):
+        mode = st.get("pa_invalid") or "recompute"
+        good = [i for i, q in enumerate(states) if combine.valid_angle(q.angle)]
+        pick = [good[k] for k in np.linspace(0, len(good) - 1, min(15, len(good))).astype(int)] if good else []
+        coords = combine.header_coords([files[states[i].pos].path for i in pick]) if mode == "recompute" else (np.nan, np.nan)
+        angles, bad, action = combine.repair_angles(states, mode, coords, float(st["lat"]), float(st["lng"]))
+        pa = {"bad": len(bad), "action": action, "first": states[bad[0]].num, "last": states[bad[-1]].num,
+              "ra_hours": None if not np.isfinite(coords[0]) else round(coords[0], 5),
+              "dec_deg": None if not np.isfinite(coords[1]) else round(coords[1], 5)}
+        log(f"{tag}: {len(bad):,} frames with an unusable LBT_PARA (999 or none), frames {pa['first']}-{pa['last']}: {action}"
+            + (f" from the pointing RA {coords[0]:.5f} h, Dec {coords[1]:+.5f} deg" if action == "recomputed" else ""))
     segs = combine.build_segments(states, st, sky_round, angles)
     order = combine.segment_order(segs)
     segs = [segs[i] for i in order]
@@ -546,7 +562,7 @@ def combine_round(files: Sequence[RawFrame], st: Dict, sky_round: bool, master: 
     _run(_segments_task, [(list(range(lo, hi)), segs[lo:hi], tag, st, path, n) for lo, hi in blocks], workers,
          f"{tag} segment coadds", None, disp, sizes=[hi - lo for lo, hi in blocks], unit="segments")
     return {"badmap": badmap, "segments": segs, "seg_path": path, "n": n, "states": states,
-            "nostar": nrej, "nostar_cut": cut}
+            "nostar": nrej, "nostar_cut": cut, "pa": pa}
 
 
 def chopsub_round(rnd: Dict, badmap: np.ndarray, st: Dict, work: str, tag: str, workers: int,
@@ -891,7 +907,7 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
     summary = {"night": night, "night_old": st.get("night_old") or night, "side": side,
                "settings_source": settings.source, "n_raw": len(sci),
                "sky_dirs": sky_dirs, "n_segments": n, "chunks": len(chunks),
-               "nostar_frames": int(rounds[0]["nostar"]),
+               "nostar_frames": int(rounds[0]["nostar"]), "bad_pa": rounds[0]["pa"],
                "nostar_cut": None if not np.isfinite(rounds[0]["nostar_cut"]) else round(float(rounds[0]["nostar_cut"]), 2),
                "positions": raw_pos, "cubes": {}}
     for cn in (1, 2):

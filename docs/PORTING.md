@@ -33,6 +33,14 @@ These quirks change results, so the port keeps them by default:
 - **Either name on the command line,** and an old folder name after `../` in `sky_dirs` is renamed.
 - **Checked on patrick** (`tools/check_selection_after_rename.py`): for all 75 IDL nights with a folder, both sides (90 night-sides), the frames selected after the renaming equal, frame for frame, those selected by the old names in the old layout, rebuilt from symbolic links. On 9 night-sides (β Leo 8 and 9, β UMa 8, ε Eri, Procyon_7, Procyon_22 and τ Ceti 2) reading the move log under the new name would have shifted the first frame by 2 to 4,000 frames.
 
+**Unusable parallactic angles** (`pa_invalid`, `recompute` by default). LBT_PARA is sometimes the placeholder 999: at the start or end of a sequence, or while the telescope control system has no angle. The raw-data check's header samples find it in the science frames of 18 nights (Alphecca_2, Altair, β Leo 2–4, β UMa_8, GJ 504, Procyon_10, 15, 16, 17, 22, 23 and 24, Sirius 1–2, τ Cet, Vega 4–5), and in many sky folders.
+- **IDL** read the value as it was and averaged it into segment and bin angles, so one such frame spoils its bin's angle.
+- **The port** recomputes those frames' angles from DATE-OBS and TIME-END and the target's pointing, the median LBT_RA and LBT_DEC of 15 frames with valid angles (`combine.repair_angles`). On β UMa 2023-02-05 the recomputed angles match LBT_PARA to 0.004° (median over 40 frames).
+- **The summary** records the frames, their range, what was done and the pointing (`bad_pa`). `drop` skips the frames instead, and `keep` reproduces IDL. Nights with `fix_pa` recompute every angle and are unaffected.
+- **Aside:** the IDL `ra` for β UMa (11.0423 h, used with `fix_pa` on β UMa_5 and _6) gives angles 0.14° above LBT_PARA on 2023-02-05; the headers' 11.03080 h matches.
+
+**Per-night port decisions** (`config/nights_port.json`). Settings the port gives a night beyond its IDL block, each with its reason, applied after the block and before `--set`: β UMa 2023-02-05 (β UMa_8) uses all its frames, including the 1,452 the sort recovered from GJ 504's folder (`frames` 155443–195100).
+
 **File order.** IDL's `FILE_SEARCH(/nosort)` lists files unsorted on patrick's RAID. The port always sorts by stem and frame number, as the Mac's volume did.
 
 **Random draws.** With `center_method=idl`, the center stage takes the median of 100 frames drawn with IDL `randomu`. The port draws with a seeded numpy generator, so its centers differ from IDL's by the scatter between random medians. The default Gaussian center uses every frame and draws nothing.

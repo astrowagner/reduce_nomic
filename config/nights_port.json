@@ -1,0 +1,6 @@
+{
+ "BetaUma_8": {
+  "settings": {"frames": [155443, 195100]},
+  "reason": "2026-11-20, Kevin: use the 1,452 frames n_230205_155443-156894 that the sort recovered from GJ504/raw (the start of the sequence, 12:41-12:44 UT, same target, filter and readout), with every later frame of the folder. Their LBT_PARA is 999 up to about frame 156700, as are some frames at the end (194900, 195100); pa_invalid=recompute computes those angles from DATE-OBS, TIME-END and the headers' pointing (RA 11.03080 h, Dec 56.38260 deg), which reproduces LBT_PARA to 0.004 deg on this night's valid frames."
+ }
+}

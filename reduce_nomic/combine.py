@@ -10,7 +10,7 @@ parallel.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -618,6 +618,123 @@ def segment_order(segs: Sequence[Segment]) -> List[int]:
         IDL chop files sort by name.
     """
     return sorted(range(len(segs)), key=lambda i: (segs[i].date, segs[i].inum))
+
+
+def valid_angle(angle: float) -> bool:
+    """Tell whether a header parallactic angle is usable.
+
+    Parameters
+    ----------
+    angle : float
+        LBT_PARA in degrees; NaN when the keyword was absent.
+
+    Returns
+    -------
+    ok : bool
+        False for NaN and for the TCS placeholder 999 (any value beyond 360 degrees).
+    """
+    return bool(np.isfinite(angle)) and abs(angle) <= 360.0
+
+
+def sexagesimal(text: object) -> float:
+    """Parse a sexagesimal header value such as ``11:01:50.8`` or ``+56:22:57``.
+
+    Parameters
+    ----------
+    text : object
+        The value; surrounding spaces and quotes are ignored.
+
+    Returns
+    -------
+    value : float
+        In the value's own unit (hours or degrees); NaN when it does not parse.
+    """
+    t = str(text).strip().strip("'").strip()
+    try:
+        sign = -1.0 if t.startswith("-") else 1.0
+        parts = [float(x) for x in t.lstrip("+-").split(":")]
+        return sign * sum(v / 60.0 ** k for k, v in enumerate(parts))
+    except ValueError:
+        return float("nan")
+
+
+def header_coords(paths: Sequence[str]) -> Tuple[float, float]:
+    """Read the target's pointing from the headers of some frames.
+
+    Parameters
+    ----------
+    paths : sequence of str
+        Raw frames to read (LBT_RA in hours, LBT_DEC in degrees, sexagesimal).
+
+    Returns
+    -------
+    ra_hours, dec_deg : float
+        Medians over the frames whose values parse; NaN when none does.
+    """
+    from astropy.io import fits
+
+    ra, dec = [], []
+    for p in paths:
+        h = fits.getheader(p)
+        r, d = sexagesimal(h.get("LBT_RA", "")), sexagesimal(h.get("LBT_DEC", ""))
+        if np.isfinite(r) and np.isfinite(d):
+            ra.append(r)
+            dec.append(d)
+    if not ra:
+        return float("nan"), float("nan")
+    return float(np.median(ra)), float(np.median(dec))
+
+
+def repair_angles(states: Sequence["FrameState"], mode: str, coords: Tuple[float, float],
+                  lat_deg: float, lng_deg: float) -> Tuple[Optional[List[float]], List[int], str]:
+    """Deal with frames whose header parallactic angle is unusable (``valid_angle``).
+
+    LBT_PARA is sometimes the placeholder 999, for example at the start or end of a sequence or
+    while the telescope control system has no angle. Averaged into a segment or a bin, one such
+    value spoils its angle. The IDL predecessor used the values as they were.
+
+    Parameters
+    ----------
+    states : sequence of FrameState
+        The round's frames (changed in place with ``drop``).
+    mode : str
+        ``recompute``: compute those frames' angles from DATE-OBS and TIME-END and the pointing
+        ``coords`` (``parallactic_angles``), falling back to ``drop`` when ``coords`` is NaN;
+        ``drop``: skip those frames, as frames without a star; ``keep``: use the values as they
+        are, as IDL.
+    coords : tuple of float
+        ``(ra_hours, dec_deg)`` of the target.
+    lat_deg, lng_deg : float
+        Observatory latitude and longitude (east positive), degrees.
+
+    Returns
+    -------
+    angles : list of float or None
+        One angle per state for ``build_segments``, with the bad ones recomputed; None when no
+        angle changed.
+    bad : list of int
+        Indices of the frames with an unusable angle.
+    action : str
+        What was done: ``none`` (no bad angle), ``recomputed``, ``dropped`` or ``kept``.
+    """
+    bad = [i for i, q in enumerate(states) if not valid_angle(q.angle)]
+    if not bad:
+        return None, bad, "none"
+    if mode == "keep":
+        return None, bad, "kept"
+    if mode == "recompute" and np.isfinite(coords[0]) and np.isfinite(coords[1]):
+        new = parallactic_angles([states[i] for i in bad], coords[0], coords[1], lat_deg, lng_deg)
+        if all(np.isfinite(new)):
+            angles = [q.angle for q in states]
+            for i, a in zip(bad, new):
+                angles[i] = a
+            return angles, bad, "recomputed"
+    if mode not in ("recompute", "drop"):
+        raise ValueError(f"pa_invalid must be recompute, drop or keep, not {mode!r}")
+    for i in bad:
+        states[i].nostar = True
+        states[i].star_x = states[i].star_y = -1
+    return None, bad, "dropped"
 
 
 def parallactic_angles(states: Sequence[FrameState], ra_hours: float, dec_deg: float,
