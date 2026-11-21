@@ -160,3 +160,20 @@ def test_star_off_center_left_out(tmp_path):
     assert r2.returncode == 1 and "no reference frames" in r2.stdout      # the one reference cube is off center
     m2 = os.path.join(root, "Fake_20220520", "klip_tpe", "inputs_rdi", "manifest.json")
     assert not os.path.exists(m2)
+
+
+def test_star_offset_ignores_far_artifacts():
+    """A bright artifact far from the center does not hide a centered star; no star near the center fails."""
+    sys.path.insert(0, os.path.dirname(TOOL))
+    import klip_tpe_inputs as k
+    yy, xx = np.mgrid[0:240, 0:240]
+    star = np.exp(-((xx - 119.5) ** 2 + (yy - 119.5) ** 2) / 72.0)
+    img = 0.94 * star
+    img[238, 43] = 1.0                                      # an edge artifact brighter than the star
+    off, pk, ratio = k.star_offset(img)
+    assert off < 1.0 and ratio > 0.9
+    empty = np.zeros((240, 240))
+    empty[14, 1] = 0.8
+    empty[120, 113] = 0.2                                   # noise near the center, the bright thing at the edge
+    off2, pk2, ratio2 = k.star_offset(empty)
+    assert ratio2 < 0.5

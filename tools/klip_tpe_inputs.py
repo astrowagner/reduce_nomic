@@ -67,9 +67,11 @@ NIGHT : str
     lists it under ``skipped`` with its frame count. A reference night's cube with fewer is left
     out of the library too.
 --max-offset : float, default 3.0
-    Largest distance, pixels, of the star's peak in the median of the cut frames (and in the cut
-    PSF) from the center; a science partition or reference cube beyond it is left out (a failed
-    split or centering, such as Vega 2022-05-20's chop B cubes), with the peak in the manifest.
+    Largest distance, pixels, of the star's peak from the center, found in the median of the cut
+    frames (and in the cut PSF) within 40 px of the center (``star_offset``); a science partition
+    or reference cube beyond it, or whose peak there is below half the median's maximum anywhere
+    (no star near the center), is left out (a failed split or centering, such as Vega 2022-05-20's
+    right chop B), with the peak in the manifest.
 --display : {"show", "none"}, default "show"
     ``show`` writes ``--show`` into both scripts (KLIP-TPE's live window), ``none`` writes
     ``--no-display``.
@@ -157,8 +159,11 @@ def cut_frames(path: str, half: int) -> np.ndarray:
         return np.array(d[..., y0:y0 + 2 * half, x0:x0 + 2 * half], dtype=np.float32)
 
 
-def star_offset(cube: np.ndarray, n_max: int = 60) -> Tuple[float, Tuple[int, int]]:
-    """Distance of the star's peak from the center of cut frames.
+def star_offset(cube: np.ndarray, n_max: int = 60, radius: float = 40.0) -> Tuple[float, Tuple[int, int], float]:
+    """Where the star is in cut frames: the peak of their median near the center.
+
+    The search is limited to a disk around the center, because a bright artifact far out (an
+    edge, the other aperture's image) can outshine the star in the median of peak-scaled frames.
 
     Parameters
     ----------
@@ -166,22 +171,31 @@ def star_offset(cube: np.ndarray, n_max: int = 60) -> Tuple[float, Tuple[int, in
         Cut frames (or one image) that should have the star at ((nx - 1) / 2, (ny - 1) / 2).
     n_max : int, default 60
         Most frames, evenly spaced, whose median is used.
+    radius : float, default 40.0
+        Radius of the disk searched, pixels (the whole image when that is smaller).
 
     Returns
     -------
     offset : float
-        Distance of the brightest pixel of the median from the center, pixels (inf when the median
-        has no finite pixel).
+        Distance of the brightest pixel within the disk from the center, pixels (inf when the
+        median has no finite pixel there).
     peak : (int, int)
         (x, y) of that pixel.
+    ratio : float
+        Its value over the median image's maximum anywhere (1 when the star is the brightest
+        thing; a small value when the disk holds no star).
     """
     c = np.asarray(cube)
     img = c if c.ndim == 2 else np.nanmedian(c[:: max(1, c.shape[0] // n_max)], axis=0)
-    if not np.any(np.isfinite(img)):
-        return float("inf"), (-1, -1)
-    y, x = np.unravel_index(np.nanargmax(img), img.shape)
     ny, nx = img.shape
-    return float(np.hypot(x - (nx - 1) / 2.0, y - (ny - 1) / 2.0)), (int(x), int(y))
+    yy, xx = np.mgrid[0:ny, 0:nx]
+    r = np.hypot(xx - (nx - 1) / 2.0, yy - (ny - 1) / 2.0)
+    disk = np.where((r <= radius) & np.isfinite(img), img, np.nan)
+    if not np.any(np.isfinite(disk)):
+        return float("inf"), (-1, -1), 0.0
+    y, x = np.unravel_index(np.nanargmax(disk), img.shape)
+    top = float(np.nanmax(img))
+    return float(r[y, x]), (int(x), int(y)), float(img[y, x] / top) if top > 0 else 0.0
 
 
 def unwrap_degrees(angles: np.ndarray) -> np.ndarray:
@@ -288,14 +302,15 @@ def main(argv: Sequence[str]) -> int:
             ang = unwrap_degrees(ang_raw)
             unwrapped = bool(np.any(np.abs(ang - ang_raw) > 1e-9))
             psf = cut_frames(psrc, a.psf_half)
-            off_c, pk_c = star_offset(cube)
-            off_p, pk_p = star_offset(psf)
-            if off_c > a.max_offset or off_p > a.max_offset:
-                print(f"{pre} cube{cn}: star not at the center (median peak at {pk_c} of {cube.shape[-1]} px, "
-                      f"PSF peak at {pk_p} of {psf.shape[-1]} px); skipped")
+            off_c, pk_c, ratio_c = star_offset(cube)
+            off_p, pk_p, ratio_p = star_offset(psf)
+            if off_c > a.max_offset or off_p > a.max_offset or ratio_c < 0.5 or ratio_p < 0.5:
+                print(f"{pre} cube{cn}: star not at the center (median peak near the center at {pk_c} of "
+                      f"{cube.shape[-1]} px, {ratio_c:.2f} of the maximum; PSF peak at {pk_p} of {psf.shape[-1]} px, "
+                      f"{ratio_p:.2f}); skipped")
                 manifest["skipped"].append({"name": f"{side}_{'AB'[cn - 1]}", "frames": int(cube.shape[0]),
-                                            "reason": f"star not at the center: median peak at {pk_c}, PSF peak at {pk_p}, "
-                                                      f"more than {a.max_offset} px from the center"})
+                                            "reason": f"star not at the center: median peak at {pk_c} ({ratio_c:.2f} of the "
+                                                      f"maximum), PSF peak at {pk_p} ({ratio_p:.2f}); limits {a.max_offset} px, 0.5"})
                 continue
             rc, used, ref_info = None, [], []
             if a.ref:
@@ -315,10 +330,10 @@ def main(argv: Sequence[str]) -> int:
                         ref_info.append({"night": rn, "frames": int(rang.size), "used": 0,
                                          "reason": f"fewer than {a.min_frames} frames"})
                         continue
-                    off_r, pk_r = star_offset(rframes)
-                    if off_r > a.max_offset:                      # star not where the cube says it is
+                    off_r, pk_r, ratio_r = star_offset(rframes)
+                    if off_r > a.max_offset or ratio_r < 0.5:     # star not where the cube says it is
                         ref_info.append({"night": rn, "frames": int(rang.size), "used": 0,
-                                         "reason": f"star not at the center: median peak at {pk_r}"})
+                                         "reason": f"star not at the center: median peak at {pk_r} ({ratio_r:.2f} of the maximum)"})
                         continue
                     ok = np.ones(rang.size, dtype=bool)
                     rbad = wrap_outliers(rang)
