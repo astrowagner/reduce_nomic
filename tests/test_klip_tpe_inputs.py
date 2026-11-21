@@ -49,3 +49,9 @@ def test_inputs_centered_with_references(tmp_path):
     assert "set -euo pipefail" in sh and "--ref-cube" in sh and "--names left_A left_B" in sh
     again = subprocess.run([sys.executable, TOOL, root, "Fake_20220101", "--tag", "rdi"], capture_output=True, text=True)
     assert again.returncode != 0                         # an existing tag is refused
+    r2 = subprocess.run([sys.executable, TOOL, root, "Fake_20220101", "--tag", "adi", "--half", "40", "--psf-half", "10",
+                         "--command-archive", "/mnt/RAID64TB/NOMIC"], capture_output=True, text=True)
+    assert r2.returncode == 0, r2.stderr
+    sh2 = open(os.path.join(root, "Fake_20220101", "klip_tpe", "run_adi.sh")).read()
+    assert "/mnt/RAID64TB/NOMIC/Fake_20220101/klip_tpe/inputs_adi/Fake_20220101_left_cube1_all_c80.fits" in sh2
+    assert root not in sh2

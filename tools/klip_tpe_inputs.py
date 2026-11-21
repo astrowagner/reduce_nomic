@@ -1,6 +1,7 @@
 """Prepare one night's port products as KLIP-TPE generic inputs, and the command that runs it.
 
 usage: python tools/klip_tpe_inputs.py ARCHIVE NIGHT --tag TAG [--sides left right] [--half 120]
+       [--command-archive PATH]
        [--psf-half 30] [--product all|clean] [--ref NIGHT ...] [--ann-edges 11 34 67]
        [--n-iter 400 400] [--n-init 60 60] [--n-remeasure 3] [--contrast0 1e-3] [--workers auto]
 
@@ -41,6 +42,9 @@ NIGHT : str
     Which binned cube to use.
 --ref : str list, optional
     Nights whose same-side, same-chop IDL-clean frames form the reference library.
+--command-archive : str, default ARCHIVE
+    Archive root to write into the command and the manifest, when the archive is mounted
+    elsewhere where this runs (the device sandbox sees /mnt/RAID64TB/NOMIC as ~/mnt/NOMIC).
 --ann-edges, --n-iter, --n-init, --n-remeasure, --contrast0, --workers
     Written into the command (KLIP-TPE options of the same names; annulus edges in pixels).
 
@@ -148,6 +152,7 @@ def main(argv: Sequence[str]) -> int:
     ap.add_argument("--n-remeasure", default="3")
     ap.add_argument("--contrast0", default="1e-3")
     ap.add_argument("--workers", default="auto")
+    ap.add_argument("--command-archive", default=None)
     a = ap.parse_args(argv)
     night_dir = os.path.join(a.archive, a.night)
     red = os.path.join(night_dir, "reduced_py")
@@ -209,9 +214,19 @@ def main(argv: Sequence[str]) -> int:
                   + (f", {part['ref_frames']} reference frames" if a.ref else ""))
     if not cubes:
         return 1
+    root = a.command_archive or a.archive
+    for part in manifest["partitions"]:
+        for k in ("cube", "angles", "psf", "ref"):
+            if k in part:
+                part[k] = os.path.join(root, os.path.relpath(part[k], a.archive))
     with open(os.path.join(out, "manifest.json"), "x") as fh:
         json.dump(manifest, fh, indent=1)
-    run_dir = os.path.join(night_dir, "klip_tpe", f"run_{a.tag}")
+    cmd_root = a.command_archive or a.archive
+    def there(path: str) -> str:
+        """The path as seen from ``--command-archive``."""
+        return os.path.join(cmd_root, os.path.relpath(path, a.archive))
+    cubes, angles, psfs, refs = ([there(x) for x in lst] for lst in (cubes, angles, psfs, refs))
+    run_dir = there(os.path.join(night_dir, "klip_tpe", f"run_{a.tag}"))
     q = shlex.quote
     lines = ["#!/usr/bin/env bash",
              f"# KLIP-TPE generic run for {a.night} ({a.tag}); made by reduce_nomic tools/klip_tpe_inputs.py",
