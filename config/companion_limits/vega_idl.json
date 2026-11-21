@@ -45,28 +45,6 @@
   "min_pa_worst": 10,
   "curves": [
     {
-      "id": "20210227",
-      "night": "Vega_20210227",
-      "date": "2021-02-27",
-      "side": "left",
-      "path": "Vega_20210227/IDL/contrast/Vega_contrast_output.sav",
-      "folder": "contrast",
-      "method": "ADI (script setting)",
-      "cap": 0.01,
-      "plot": true
-    },
-    {
-      "id": "20210227_derot",
-      "night": "Vega_20210227",
-      "date": "2021-02-27",
-      "side": "left",
-      "path": "Vega_20210227/IDL/contrast-derot/Vega_contrast_output.sav",
-      "folder": "contrast-derot",
-      "method": "derotation only",
-      "cap": 0.01,
-      "plot": false
-    },
-    {
       "id": "20220515_klip",
       "night": "Vega_20220515",
       "date": "2022-05-15",
@@ -146,6 +124,11 @@
     }
   ],
   "missing": [
+    {
+      "night": "Vega_20210227",
+      "date": "2021-02-27",
+      "note": "no valid IDL limits: its IDL clean products hold 16 and 12 frames whose angles span 0.01 deg (-72.53 to -72.54 deg), so the ADI and derotation-only curves (IDL/contrast/, IDL/contrast-derot/) are not limits; the 2026-11-16 raw-data check had flagged this reduction as broken"
+    },
     {
       "night": "Vega_20220522",
       "date": "2022-05-22",
