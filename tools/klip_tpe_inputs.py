@@ -48,7 +48,9 @@ data arguments: klip-tpe's run record restores the data arguments only of runs m
 environment variable ``KT`` set to the ``klip-tpe`` executable to use (a pinned clone's);
 ``WORKERS`` sets the worker budget (default ``--workers``, 16 for the smoke test). With ``--link``
 the three run ``tools/klip_tpe_linked.py``, copied into ``inputs_<TAG>/``, with the Python beside
-``KT``, so that the bases given are linked across the partitions.
+``KT``, so that the bases given are linked across the partitions. Arguments given to a script go to
+the end of its klip-tpe command line, such as ``--gpu-share auto --gpu-device GPU-...`` (a card by
+the UUID ``nvidia-smi -L`` shows).
 
 Parameters
 ----------
@@ -634,7 +636,7 @@ def main(argv: Sequence[str]) -> int:
         '[ ! -e "${RUN:?}/final_results.json" ] || { echo "${RUN} is already finished"; exit 1; }'] + launch[:-1] + [
         launch[-1] + " resume --instrument generic \\"] + data_args + [
         f'  --workers "${{WORKERS:-{a.workers}}}" {display} \\',
-        '  --run-dir "${RUN:?}"']
+        '  --run-dir "${RUN:?}" "$@"']
     resume[1] = (f"# Resume the KLIP-TPE generic run for {a.night} ({a.tag}) from its checkpoint, which holds the "
                  f"search's configuration; made by reduce_nomic tools/klip_tpe_inputs.py")
     lines += ["  --names " + " ".join(names) + " \\",
@@ -642,7 +644,7 @@ def main(argv: Sequence[str]) -> int:
               f"  --ann-edges {' '.join(a.ann_edges)} --n-iter {' '.join(a.n_iter)} --n-init {' '.join(a.n_init)} \\",
               f"  --n-remeasure {a.n_remeasure} --n-top 6 --n-valid 8 --contrast0 {a.contrast0}{extra_opts} \\",
               f'  --workers "${{WORKERS:-{a.workers}}}" --seed 1 --verify {display} \\',
-              '  --run-dir "${RUN:?}"']
+              '  --run-dir "${RUN:?}" "$@"']
     smoke_dir = there(os.path.join(night_dir, "klip_tpe", f"smoke_{a.tag}"))
     smoke = [ln.replace(f"RUN={q(run_dir)}", f"RUN={q(smoke_dir)}") for ln in head]
     smoke[1] = f"# KLIP-TPE smoke test for {a.night} ({a.tag}): 10 evaluations on the first annulus; its numbers mean nothing"
@@ -650,7 +652,7 @@ def main(argv: Sequence[str]) -> int:
               "  --pxscale 0.0179 --lam 11.1e-6 --diam 8.4 \\",
               f"  --ann-edges {' '.join(a.ann_edges[:2])} --n-iter 10 --n-init 5 --n-top 1 --n-valid 1 --contrast0 {a.contrast0}{extra_opts} \\",
               f'  --workers "${{WORKERS:-16}}" --seed 1 {display} \\',
-              '  --run-dir "${RUN:?}"']
+              '  --run-dir "${RUN:?}" "$@"']
     for name, body in ((f"run_{a.tag}.sh", lines), (f"run_{a.tag}_smoke.sh", smoke), (f"resume_{a.tag}.sh", resume)):
         sh = os.path.join(night_dir, "klip_tpe", name)
         with open(sh, "x") as fh:

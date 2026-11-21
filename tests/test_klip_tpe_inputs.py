@@ -354,7 +354,7 @@ def test_resume_script_repeats_the_data_arguments_and_link_runs_the_wrapper(tmp_
     data = [ln for ln in run if ln.startswith(("  --cube", "  --angles", "  --psf", "  --names", "  --pxscale"))]
     assert len(data) == 5 and [ln for ln in res if ln in data] == data
     assert '"${KT:?}" resume --instrument generic \\' in res
-    assert '  --workers "${WORKERS:-auto}" --show \\' in res and res[-1] == '  --run-dir "${RUN:?}"'
+    assert '  --workers "${WORKERS:-auto}" --show \\' in res and res[-1] == '  --run-dir "${RUN:?}" "$@"'
     assert not any(opt in ln for ln in res for opt in ("--n-iter", "--ann-edges", "--use-contrast", "--seed"))
     assert json.load(open(os.path.join(kt, "inputs_plain", "manifest.json")))["link"] is None
     r = subprocess.run(base + ["--tag", "lnk", "--use-contrast", "5e-4", "--link", "bin", "filter", "angsep",
@@ -381,9 +381,13 @@ def test_resume_script_repeats_the_data_arguments_and_link_runs_the_wrapper(tmp_
     assert out.returncode != 0 and "has no checkpoint.json" in out.stdout
     os.makedirs(os.path.join(kt, "run_lnk"))
     open(os.path.join(kt, "run_lnk", "checkpoint.json"), "w").close()
-    out = subprocess.run(["bash", os.path.join(kt, "resume_lnk.sh")], env=env, capture_output=True, text=True)
+    out = subprocess.run(["bash", os.path.join(kt, "resume_lnk.sh"), "--gpu-share", "auto", "--gpu-device", "GPU-x"],
+                         env=env, capture_output=True, text=True)
     args = out.stdout.splitlines()
     assert out.returncode == 0 and args[8:11] == ["resume", "--instrument", "generic"]
+    assert args[-6:] == ["--run-dir", os.path.join(kt, "run_lnk"), "--gpu-share", "auto", "--gpu-device", "GPU-x"]
+    out = subprocess.run(["bash", os.path.join(kt, "resume_lnk.sh")], env=env, capture_output=True, text=True)
+    args = out.stdout.splitlines()
     assert "--use-contrast" not in args and args[-1] == os.path.join(kt, "run_lnk")
     open(os.path.join(kt, "run_lnk", "final_results.json"), "w").close()
     out = subprocess.run(["bash", os.path.join(kt, "resume_lnk.sh")], env=env, capture_output=True, text=True)
