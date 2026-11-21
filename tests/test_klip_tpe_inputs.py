@@ -254,6 +254,42 @@ def test_frames_with_nan_in_the_cut_left_out(tmp_path):
     assert not os.path.exists(os.path.join(root, "Fake_20220524", "klip_tpe", "inputs_adi"))
 
 
+def test_frames_with_nan_kept_with_keep_nan(tmp_path):
+    """--keep-nan keeps science and reference frames with NaN in the cut, NaN and all, and the
+    manifest counts them; --min-coverage reaches both scripts; a bad fraction stops the tool."""
+    root = str(tmp_path)
+    rows = [0] * 12
+    rows[3], rows[5], rows[7] = 125, 111, 125           # as in the test above: 3 frames with NaN in a 40 px half cut
+    _night(root, "Fake_20220522", 12, nan_rows=rows)
+    ref_rows = [125, 125, 0, 0, 0, 0, 0]
+    _night(root, "Fake_20220523", 7, angles=np.array([-50.0, -40.0, -30.0, 30.0, 40.0, 50.0, 60.0]), nan_rows=ref_rows)
+    r = subprocess.run([sys.executable, TOOL, root, "Fake_20220522", "--tag", "pad", "--half", "40", "--psf-half", "10",
+                        "--ref", "Fake_20220523", "--ref-min-dpa", "15", "--min-frames", "5", "--keep-nan",
+                        "--min-coverage", "0"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "kept 3 of 12 frame(s) with NaN" in r.stdout
+    d = os.path.join(root, "Fake_20220522", "klip_tpe", "inputs_pad")
+    cube = fits.getdata(os.path.join(d, "Fake_20220522_left_cube1_all_c80.fits"))
+    ref = fits.getdata(os.path.join(d, "Fake_20220522_left_cube1_ref_c80.fits"))
+    assert cube.shape == (12, 80, 80) and ref.shape == (7, 80, 80)
+    bad = [k for k in range(12) if not np.all(np.isfinite(cube[k]))]
+    assert bad == [3, 5, 7]                                                  # the padding is kept as NaN
+    assert np.all(np.isnan(cube[3, :15])) and np.all(np.isfinite(cube[3, 15:]))
+    m = json.load(open(os.path.join(d, "manifest.json")))
+    assert m["keep_nan"] is True and m["min_coverage"] == 0.0
+    p = m["partitions"][0]
+    assert p["frames"] == 12 and p["dropped_nan"] == [] and p["frames_with_nan"] == 3
+    assert abs(p["nan_fraction"] - (15 + 1 + 15) * 80 / (12 * 80 * 80)) < 1e-9
+    det = p["ref_detail"][0]
+    assert (det["nan_within_cut"], det["nan_kept"], det["used"]) == (2, True, 7)
+    kt = os.path.join(root, "Fake_20220522", "klip_tpe")
+    assert "--min-coverage 0 \\" in open(os.path.join(kt, "run_pad.sh")).read()
+    assert "--min-coverage 0" in open(os.path.join(kt, "run_pad_smoke.sh")).read()
+    r2 = subprocess.run([sys.executable, TOOL, root, "Fake_20220522", "--tag", "bad", "--half", "40", "--psf-half", "10",
+                         "--min-coverage", "1.5"], capture_output=True, text=True)
+    assert r2.returncode != 0 and "--min-coverage" in r2.stderr
+
+
 def test_finite_half_counts_from_the_center():
     """The largest finite centered square: no NaN gives the cut's half-width, a NaN row or column
     limits it to its distance from the center."""

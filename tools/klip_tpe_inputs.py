@@ -4,7 +4,7 @@ usage: python tools/klip_tpe_inputs.py ARCHIVE NIGHT --tag TAG [--sides left rig
        [--command-archive PATH] [--min-frames 10] [--display show|none] [--ref-min-dpa DEG]
        [--psf-half 30] [--product all|clean] [--ref NIGHT ...] [--ann-edges 11 34 67]
        [--n-iter 400 400] [--n-init 60 60] [--n-remeasure 3] [--contrast0 1e-3] [--workers auto]
-       [--use-contrast C ...]
+       [--use-contrast C ...] [--keep-nan] [--min-coverage F]
 
 KLIP-TPE's generic adapter (``klip-tpe generic``) takes one registered cube, its derotation angles
 and a PSF template per partition, and optionally a reference cube (RDI). For each side and chop of
@@ -16,9 +16,11 @@ and a PSF template per partition, and optionally a reference cube (RDI). For eac
   for KLIP-TPE's own frame selection; ``clean``: the IDL clean selection) cut to (2 half)² pixels
   with the star at the array center, so that KLIP-TPE's default center applies, without the frames
   that have a NaN pixel within the cut (``finite_half``): a cut that reaches past the detector's
-  edge carries NaN padding there, and KLIP-TPE's high-pass spreads one NaN over the whole frame,
-  which empties every bin the frame falls in; and without the frames whose star is more than
-  ``--max-frame-offset`` from the center (``frame_offsets``; a chunk whose centering failed);
+  edge carries NaN padding there, and up to klip-tpe ``aa0702b`` the high-pass spreads one NaN over
+  the whole frame, which empties every bin the frame falls in (``--keep-nan`` keeps those frames,
+  for klip-tpe ``bf99474`` and later, which take NaN as no data); and without the frames whose star
+  is more than ``--max-frame-offset`` from the center (``frame_offsets``; a chunk whose centering
+  failed);
 * their parallactic angles (KLIP-TPE derotates counterclockwise by angle + truenorth, as the IDL
   predecessor does with ``rot(frame, -angle - truenorth)``), unwrapped in time order so that a
   night whose angles cross ±180° (a transit north of the zenith) has no jump: KLIP-TPE's reference
@@ -31,8 +33,9 @@ and a PSF template per partition, and optionally a reference cube (RDI). For eac
   within that box (the frames are peak-scaled, so every frame shares the unit);
 * with ``--ref``: the same side and chop of the given nights' IDL-clean frames, cut the same way
   and stacked, as the reference library, without cubes of fewer than ``--min-frames`` frames,
-  frames whose angle was averaged across the wrap, frames with NaN within the cut or with the
-  star off the center, and frames within ``--ref-min-dpa`` of any science frame's angle. A sky-fixed companion
+  frames whose angle was averaged across the wrap, frames with NaN within the cut (unless
+  ``--keep-nan``) or with the star off the center, and frames within ``--ref-min-dpa`` of any
+  science frame's angle. A sky-fixed companion
   sits at detector angle φ - q, so in a reference frame whose angle q_r is close to a science
   frame's q_s it sits where it does in the science frame, and RDI would subtract it.
 
@@ -98,6 +101,18 @@ NIGHT : str
     (KLIP-TPE's ``--use-contrast``). A 0 calibrates that annulus, and so does every annulus past
     the end of the list. Written into both scripts and recorded in the manifest
     (``use_contrast``); without it every annulus calibrates.
+--keep-nan : flag
+    Keep the science and reference frames that have NaN within the cut (past the detector's
+    edge) instead of leaving them out, for klip-tpe ``bf99474`` and later, which take NaN as no
+    data and place injections and noise apertures only where enough frames have data. Frames
+    with the star off the center are still left out. The manifest records the flag
+    (``keep_nan``) and, per partition, the frames with NaN (``frames_with_nan``) and the NaN
+    fraction of the cut (``nan_fraction``).
+--min-coverage : float, optional
+    Fewest of the frames, as a fraction from 0 to 1, that must have data where KLIP-TPE places a
+    source or a noise aperture (its ``--min-coverage``, default 0.5; 0 masks only where no
+    frame has data). Written into both scripts and recorded in the manifest
+    (``min_coverage``); needs klip-tpe ``bf99474`` or later.
 
 Returns
 -------
@@ -111,9 +126,11 @@ inputs_<TAG>/ : files
     finite (``finite_half_px``: the smallest, 5th-percentile and median half-width of the largest
     finite centered square, at most ``--half``), the frames left out with the star off the center
     (``dropped_off_center``: index in the binned cube and offset in pixels), the reference frames
-    left out for NaN (``nan_within_cut`` per reference night) or with the star off the center
-    (``off_center``), the skipped partitions, and the fixed injection contrasts (``use_contrast``,
-    None when every annulus calibrates)).
+    with NaN (``nan_within_cut`` per reference night, left out unless ``nan_kept``) or with the
+    star off the center (``off_center``), the skipped partitions, the fixed injection contrasts
+    (``use_contrast``, None when every annulus calibrates), ``keep_nan`` and ``min_coverage``, and
+    per partition the frames kept with NaN within the cut (``frames_with_nan``) and the cut's NaN
+    fraction (``nan_fraction``)).
 run_<TAG>.sh, run_<TAG>_smoke.sh : file
     The run and its smoke test, for Kevin to check and run.
 """
@@ -351,7 +368,11 @@ def main(argv: Sequence[str]) -> int:
     ap.add_argument("--max-offset", type=float, default=3.0)
     ap.add_argument("--max-frame-offset", type=float, default=5.0)
     ap.add_argument("--use-contrast", nargs="+", default=None)
+    ap.add_argument("--keep-nan", action="store_true")
+    ap.add_argument("--min-coverage", type=float, default=None)
     a = ap.parse_args(argv)
+    if a.min_coverage is not None and not (np.isfinite(a.min_coverage) and 0.0 <= a.min_coverage <= 1.0):
+        ap.error("--min-coverage is a fraction of the frames, from 0 to 1")
     if a.ref and a.ref_min_dpa is None:
         ap.error("--ref needs --ref-min-dpa (degrees; 0 keeps every reference frame)")
     use_contrast: Optional[List[float]] = None
@@ -362,7 +383,9 @@ def main(argv: Sequence[str]) -> int:
             ap.error(f"--use-contrast takes numbers, not {' '.join(a.use_contrast)}")
         if not all(np.isfinite(v) and v >= 0 for v in use_contrast):
             ap.error("--use-contrast values must be finite and at least 0 (0 calibrates that annulus)")
-    contrast_opt = f" --use-contrast {' '.join(a.use_contrast)}" if a.use_contrast else ""
+    extra_opts = f" --use-contrast {' '.join(a.use_contrast)}" if a.use_contrast else ""
+    if a.min_coverage is not None:
+        extra_opts += f" --min-coverage {a.min_coverage:g}"
     display = "--show" if a.display == "show" else "--no-display"
     night_dir = os.path.join(a.archive, a.night)
     red = os.path.join(night_dir, "reduced_py")
@@ -372,7 +395,8 @@ def main(argv: Sequence[str]) -> int:
     tag = "_clean" if a.product == "clean" else ""
     manifest: Dict = {"night": a.night, "tag": a.tag, "product": a.product, "half": a.half,
                       "psf_half": a.psf_half, "ref_nights": a.ref, "min_frames": a.min_frames,
-                      "use_contrast": use_contrast, "partitions": [], "skipped": []}
+                      "use_contrast": use_contrast, "keep_nan": bool(a.keep_nan),
+                      "min_coverage": a.min_coverage, "partitions": [], "skipped": []}
     cubes: List[str] = []
     angles: List[str] = []
     psfs: List[str] = []
@@ -413,6 +437,12 @@ def main(argv: Sequence[str]) -> int:
             fh = finite_half(cube)
             fh_stats = {"min": int(fh.min()), "p05": int(np.floor(np.percentile(fh, 5))), "median": int(np.median(fh))}
             has_nan = fh < a.half
+            n_with_nan = int(has_nan.sum())
+            if a.keep_nan:
+                if n_with_nan:
+                    print(f"{pre} cube{cn}: kept {n_with_nan} of {has_nan.size} frame(s) with NaN within the "
+                          f"{2 * a.half} px cut (--keep-nan); finite within ±{fh_stats['min']} px in every frame")
+                has_nan = np.zeros_like(has_nan)
             dropped_nan = [int(i) for i in src_idx[has_nan]]
             if has_nan.any():
                 cube, ang_raw, src_idx = cube[~has_nan], ang_raw[~has_nan], src_idx[~has_nan]
@@ -490,14 +520,16 @@ def main(argv: Sequence[str]) -> int:
                     rbad = wrap_outliers(rang)
                     ok[rbad] = False
                     rfin = finite_half(rframes) >= a.half       # a reference frame with NaN in the cut would empty its bin too
-                    ok &= rfin
+                    if not a.keep_nan:
+                        ok &= rfin
                     rcen = frame_offsets(rframes) <= a.max_frame_offset
                     ok &= rcen
                     dpa = np.abs((rang[:, None] - ang_raw[None, :] + 180.0) % 360.0 - 180.0).min(axis=1)
                     near = ok & (dpa < a.ref_min_dpa)
                     ok &= dpa >= a.ref_min_dpa
                     ref_info.append({"night": rn, "frames": int(rang.size), "wrap_averaged": int(rbad.size),
-                                     "nan_within_cut": int((~rfin).sum()), "off_center": int((~rcen).sum()),
+                                     "nan_within_cut": int((~rfin).sum()), "nan_kept": bool(a.keep_nan),
+                                     "off_center": int((~rcen).sum()),
                                      "within_min_dpa": int(near.sum()), "used": int(ok.sum()),
                                      "sources": {os.path.basename(x): sha256_of(x) for x in (rsrc, rasrc)}})
                     if ok.any():
@@ -520,6 +552,8 @@ def main(argv: Sequence[str]) -> int:
                     "angle_min": float(ang.min()), "angle_max": float(ang.max()),
                     "rotation_deg": float(ang.max() - ang.min()), "unwrapped": unwrapped,
                     "dropped_wrap_averaged": dropped, "dropped_nan": dropped_nan, "finite_half_px": fh_stats,
+                    "frames_with_nan": int(np.sum(finite_half(cube) < a.half)),
+                    "nan_fraction": float(np.mean(~np.isfinite(cube))),
                     "dropped_off_center": dropped_off,
                     "sources": {os.path.basename(p): sha256_of(p) for p in (src, asrc, psrc)}}
             if rc is not None:
@@ -565,7 +599,7 @@ def main(argv: Sequence[str]) -> int:
     lines += ["  --names " + " ".join(names) + " \\",
               "  --pxscale 0.0179 --lam 11.1e-6 --diam 8.4 \\",
               f"  --ann-edges {' '.join(a.ann_edges)} --n-iter {' '.join(a.n_iter)} --n-init {' '.join(a.n_init)} \\",
-              f"  --n-remeasure {a.n_remeasure} --n-top 6 --n-valid 8 --contrast0 {a.contrast0}{contrast_opt} \\",
+              f"  --n-remeasure {a.n_remeasure} --n-top 6 --n-valid 8 --contrast0 {a.contrast0}{extra_opts} \\",
               f'  --workers "${{WORKERS:-{a.workers}}}" --seed 1 --verify {display} \\',
               '  --run-dir "${RUN:?}"']
     smoke_dir = there(os.path.join(night_dir, "klip_tpe", f"smoke_{a.tag}"))
@@ -573,7 +607,7 @@ def main(argv: Sequence[str]) -> int:
     smoke[1] = f"# KLIP-TPE smoke test for {a.night} ({a.tag}): 10 evaluations on the first annulus; its numbers mean nothing"
     smoke += ["  --names " + " ".join(names) + " \\",
               "  --pxscale 0.0179 --lam 11.1e-6 --diam 8.4 \\",
-              f"  --ann-edges {' '.join(a.ann_edges[:2])} --n-iter 10 --n-init 5 --n-top 1 --n-valid 1 --contrast0 {a.contrast0}{contrast_opt} \\",
+              f"  --ann-edges {' '.join(a.ann_edges[:2])} --n-iter 10 --n-init 5 --n-top 1 --n-valid 1 --contrast0 {a.contrast0}{extra_opts} \\",
               f'  --workers "${{WORKERS:-16}}" --seed 1 {display} \\',
               '  --run-dir "${RUN:?}"']
     for name, body in ((f"run_{a.tag}.sh", lines), (f"run_{a.tag}_smoke.sh", smoke)):
