@@ -93,7 +93,7 @@ PORT_DEFAULTS: Dict[str, Any] = {
     "edgecheck_idl_bounds": False,  # split stage: True reproduces IDL's edge-check bounds
                                     # [radius, 2 radius]; False uses the padded frame's own,
                                     # [radius, framew - radius] (geometry.edge_checked)
-    "pa_invalid": "recompute",  # frames whose LBT_PARA is unusable (999 or absent): "recompute" from
+    "pa_invalid": "recompute",  # frames whose LBT_PARA is unusable (999, 0 or absent): "recompute" from
                                 # DATE-OBS, TIME-END and the headers' pointing, "drop" them, or
                                 # "keep" the values (IDL); unused with fix_pa (combine.repair_angles)
     "seed": 0,              # seed for the random frame draws of the center stage

@@ -52,3 +52,23 @@ def test_wrap_outliers_finds_the_2022_05_21_bins():
     assert wrap_outliers(np.linspace(-10, 10, 50)).size == 0
     edge = [168.12, 178.27, 176.65, 175.5, 174.0]          # a wrongly averaged first bin
     assert wrap_outliers(edge).tolist() == [0]
+
+
+def test_valid_angle_rejects_placeholders():
+    """NaN, the 999 placeholder and an exact 0 (telescope dropout) are unusable; others are kept."""
+    from reduce_nomic import combine
+    assert not combine.valid_angle(float("nan"))
+    assert not combine.valid_angle(999.0)
+    assert not combine.valid_angle(0.0)
+    assert combine.valid_angle(1e-8) and combine.valid_angle(-179.85) and combine.valid_angle(360.0)
+
+
+def test_repair_angles_recomputes_a_dropout():
+    """A frame with LBT_PARA 0 between valid ones is recomputed from its time and the pointing."""
+    from reduce_nomic import combine
+    states = [combine.FrameState(pos=i, num=56900 + i, inum=f"{56900 + i:06d}", date="2024-04-25",
+                                 time_end=t, angle=a, dit=0.08, objname="bet Uma", median=21000.0)
+              for i, (t, a) in enumerate([("05:13:44.6", 1.0), ("05:13:45.6", 0.0), ("05:13:46.6", 1.0)])]
+    angles, bad, action = combine.repair_angles(states, "recompute", (11.0308, 56.3824), 32.7014, -109.889)
+    assert bad == [1] and action == "recomputed"
+    assert angles[0] == 1.0 and angles[2] == 1.0 and np.isfinite(angles[1]) and angles[1] != 0.0

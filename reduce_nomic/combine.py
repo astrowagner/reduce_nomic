@@ -633,9 +633,12 @@ def valid_angle(angle: float) -> bool:
     Returns
     -------
     ok : bool
-        False for NaN and for the TCS placeholder 999 (any value beyond 360 degrees).
+        False for NaN, for the TCS placeholder 999 (any value beyond 360 degrees) and for exactly
+        0, which the telescope control system writes, with LBT_ALT 0 and an empty LSTATUS, when
+        it drops out (header samples: β UMa 2024-04-25 frame 56908, 2024-04-26 frame 66295). A
+        real angle is written with 8 decimals and is exactly 0 with negligible probability.
     """
-    return bool(np.isfinite(angle)) and abs(angle) <= 360.0
+    return bool(np.isfinite(angle)) and abs(angle) <= 360.0 and angle != 0.0
 
 
 def sexagesimal(text: object) -> float:
@@ -692,8 +695,9 @@ def repair_angles(states: Sequence["FrameState"], mode: str, coords: Tuple[float
     """Deal with frames whose header parallactic angle is unusable (``valid_angle``).
 
     LBT_PARA is sometimes the placeholder 999, for example at the start or end of a sequence or
-    while the telescope control system has no angle. Averaged into a segment or a bin, one such
-    value spoils its angle. The IDL predecessor used the values as they were.
+    while the telescope control system has no angle, and sometimes exactly 0 when it drops out.
+    Averaged into a segment or a bin, one such value spoils its angle. The IDL predecessor used
+    the values as they were.
 
     Parameters
     ----------

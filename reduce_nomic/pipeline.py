@@ -511,7 +511,7 @@ def combine_round(files: Sequence[RawFrame], st: Dict, sky_round: bool, master: 
         frames, in that order), ``n`` (segment count), ``states``, ``nostar`` and
         ``nostar_cut``: the frames skipped for having no star in the searched region
         (``combine.reject_no_star``, science round only) and the S/N cut used, and ``pa``: the
-        frames whose LBT_PARA is unusable (999 or absent) and what was done with them
+        frames whose LBT_PARA is unusable (999, 0 or absent) and what was done with them
         (``pa_invalid``, ``combine.repair_angles``; science round only, not with ``fix_pa``):
         ``bad`` (count), ``action``, and when any, ``first`` and ``last`` frame numbers and the
         pointing ``ra_hours`` and ``dec_deg`` used to recompute them.
@@ -555,7 +555,7 @@ def combine_round(files: Sequence[RawFrame], st: Dict, sky_round: bool, master: 
         pa = {"bad": len(bad), "action": action, "first": states[bad[0]].num, "last": states[bad[-1]].num,
               "ra_hours": None if not np.isfinite(coords[0]) else round(coords[0], 5),
               "dec_deg": None if not np.isfinite(coords[1]) else round(coords[1], 5)}
-        log(f"{tag}: {len(bad):,} frames with an unusable LBT_PARA (999 or none), frames {pa['first']}-{pa['last']}: {action}"
+        log(f"{tag}: {len(bad):,} frames with an unusable LBT_PARA (999, 0 or none), frames {pa['first']}-{pa['last']}: {action}"
             + (f" from the pointing RA {coords[0]:.5f} h, Dec {coords[1]:+.5f} deg" if action == "recomputed" else ""))
     segs = combine.build_segments(states, st, sky_round, angles)
     order = combine.segment_order(segs)
