@@ -16,7 +16,8 @@ and a PSF template per partition, and optionally a reference cube (RDI). For eac
   with the star at the array center, so that KLIP-TPE's default center applies, without the frames
   that have a NaN pixel within the cut (``finite_half``): a cut that reaches past the detector's
   edge carries NaN padding there, and KLIP-TPE's high-pass spreads one NaN over the whole frame,
-  which empties every bin the frame falls in;
+  which empties every bin the frame falls in; and without the frames whose star is more than
+  ``--max-frame-offset`` from the center (``frame_offsets``; a chunk whose centering failed);
 * their parallactic angles (KLIP-TPE derotates counterclockwise by angle + truenorth, as the IDL
   predecessor does with ``rot(frame, -angle - truenorth)``), unwrapped in time order so that a
   night whose angles cross ±180° (a transit north of the zenith) has no jump: KLIP-TPE's reference
@@ -29,8 +30,8 @@ and a PSF template per partition, and optionally a reference cube (RDI). For eac
   within that box (the frames are peak-scaled, so every frame shares the unit);
 * with ``--ref``: the same side and chop of the given nights' IDL-clean frames, cut the same way
   and stacked, as the reference library, without cubes of fewer than ``--min-frames`` frames,
-  frames whose angle was averaged across the wrap, frames with NaN within the cut and frames
-  within ``--ref-min-dpa`` of any science frame's angle. A sky-fixed companion
+  frames whose angle was averaged across the wrap, frames with NaN within the cut or with the
+  star off the center, and frames within ``--ref-min-dpa`` of any science frame's angle. A sky-fixed companion
   sits at detector angle φ - q, so in a reference frame whose angle q_r is close to a science
   frame's q_s it sits where it does in the science frame, and RDI would subtract it.
 
@@ -70,8 +71,9 @@ NIGHT : str
     Archive root to write into the command and the manifest, when the archive is mounted
     elsewhere where this runs (the device sandbox sees /mnt/RAID64TB/NOMIC as ~/mnt/NOMIC).
 --min-frames : int, default 10
-    Fewest frames a partition needs, binned and again after the frames with NaN within the cut
-    are left out; a side and chop with fewer is left out, and the manifest lists it under
+    Fewest frames a partition needs, binned and again after the frames with NaN within the cut or
+    with the star off the center are left out; a side and chop with fewer is left out, and the
+    manifest lists it under
     ``skipped`` with its frame count. A reference night's cube with fewer binned frames is left
     out of the library too.
 --max-offset : float, default 3.0
@@ -80,6 +82,11 @@ NIGHT : str
     or reference cube beyond it, or whose peak there is below half the median's maximum anywhere
     (no star near the center), is left out (a failed split or centering, such as Vega 2022-05-20's
     right chop B), with the peak in the manifest.
+--max-frame-offset : float, default 5.0
+    Largest distance, pixels, of a single frame's brightest pixel within 40 px of the center from
+    the center (``frame_offsets``); science and reference frames beyond it are left out
+    (``dropped_off_center``, ``off_center``). Well-centered Vega frames lie within 2.5 px; the
+    frames of 2022-05-21 left chop B chunk 88, whose Gaussian center fit failed, lie 40 px off.
 --display : {"show", "none"}, default "show"
     ``show`` writes ``--show`` into both scripts (KLIP-TPE's live window), ``none`` writes
     ``--no-display``.
@@ -96,8 +103,10 @@ inputs_<TAG>/ : files
     unwrapped, the binned frames left out for a wrongly averaged angle (``dropped_wrap_averaged``)
     or for NaN within the cut (``dropped_nan``, indices in the binned cube), how far the frames are
     finite (``finite_half_px``: the smallest, 5th-percentile and median half-width of the largest
-    finite centered square, at most ``--half``), the reference frames left out for NaN
-    (``nan_within_cut`` per reference night), and the skipped partitions).
+    finite centered square, at most ``--half``), the frames left out with the star off the center
+    (``dropped_off_center``: index in the binned cube and offset in pixels), the reference frames
+    left out for NaN (``nan_within_cut`` per reference night) or with the star off the center
+    (``off_center``), and the skipped partitions).
 run_<TAG>.sh, run_<TAG>_smoke.sh : file
     The run and its smoke test, for Kevin to check and run.
 """
@@ -243,6 +252,44 @@ def finite_half(cube: np.ndarray) -> np.ndarray:
     return out
 
 
+def frame_offsets(cube: np.ndarray, radius: float = 40.0) -> np.ndarray:
+    """Where the star is in each cut frame: the distance of its brightest pixel near the center from the center.
+
+    A chunk whose centering failed (the port's fallback estimator found the wrong spot, as in
+    2022-05-21 left chop B chunk 88, put 43 px off) gives binned frames with the star far from the
+    center. Such a frame would leave a bright residual in the reduction, where it could pass for a
+    companion, and the median-image check (``star_offset``) cannot see a few of them.
+
+    Parameters
+    ----------
+    cube : ndarray, shape (n, ny, nx)
+        Cut frames that should have the star at ((nx - 1) / 2, (ny - 1) / 2), where n is the
+        number of frames and ny, nx their size in pixels.
+    radius : float, default 40.0
+        Radius of the disk around the center searched in each frame, pixels.
+
+    Returns
+    -------
+    offset : ndarray, float64, shape (n,)
+        For each frame, the distance of the brightest finite pixel within the disk from the center,
+        pixels (at least 0.71 px for the half-pixel center of an even-sized frame; inf for a frame
+        with no finite pixel there).
+    """
+    c = np.asarray(cube)
+    n, ny, nx = c.shape
+    yy, xx = np.mgrid[0:ny, 0:nx]
+    r = np.hypot(xx - (nx - 1) / 2.0, yy - (ny - 1) / 2.0)
+    disk = r <= radius
+    rd = r[disk]
+    out = np.full(n, np.inf)
+    for k in range(n):
+        v = np.asarray(c[k][disk], dtype=np.float64)
+        good = np.isfinite(v)
+        if good.any():
+            out[k] = float(rd[np.argmax(np.where(good, v, -np.inf))])
+    return out
+
+
 def unwrap_degrees(angles: np.ndarray) -> np.ndarray:
     """Remove ±360° jumps from a time-ordered sequence of angles.
 
@@ -295,6 +342,7 @@ def main(argv: Sequence[str]) -> int:
     ap.add_argument("--display", choices=["show", "none"], default="show")
     ap.add_argument("--ref-min-dpa", type=float, default=None)
     ap.add_argument("--max-offset", type=float, default=3.0)
+    ap.add_argument("--max-frame-offset", type=float, default=5.0)
     a = ap.parse_args(argv)
     if a.ref and a.ref_min_dpa is None:
         ap.error("--ref needs --ref-min-dpa (degrees; 0 keeps every reference frame)")
@@ -362,8 +410,6 @@ def main(argv: Sequence[str]) -> int:
                                                       f"{2 * a.half} px cut ({len(dropped_nan)} with NaN left out)",
                                             "finite_half_px": fh_stats})
                 continue
-            ang = unwrap_degrees(ang_raw)
-            unwrapped = bool(np.any(np.abs(ang - ang_raw) > 1e-9))
             psf = cut_frames(psrc, a.psf_half)
             if not np.all(np.isfinite(psf)):
                 print(f"{pre} cube{cn}: the PSF template has {int(np.sum(~np.isfinite(psf)))} NaN pixel(s) within "
@@ -381,6 +427,25 @@ def main(argv: Sequence[str]) -> int:
                                             "reason": f"star not at the center: median peak at {pk_c} ({ratio_c:.2f} of the "
                                                       f"maximum), PSF peak at {pk_p} ({ratio_p:.2f}); limits {a.max_offset} px, 0.5"})
                 continue
+            # The partition's median is centered; now single frames whose chunk was centered on the
+            # wrong spot, which the median does not show.
+            foff = frame_offsets(cube)
+            is_off = foff > a.max_frame_offset
+            dropped_off = [{"index": int(i), "offset_px": round(float(o), 1)} for i, o in zip(src_idx[is_off], foff[is_off])]
+            if is_off.any():
+                cube, ang_raw, src_idx = cube[~is_off], ang_raw[~is_off], src_idx[~is_off]
+                print(f"{pre} cube{cn}: left out {len(dropped_off)} frame(s) whose star is more than "
+                      f"{a.max_frame_offset} px from the center (index, px): "
+                      f"{[(d['index'], d['offset_px']) for d in dropped_off]}")
+            if cube.shape[0] < a.min_frames:
+                print(f"{pre} cube{cn}: {cube.shape[0]} frames with the star at the center, fewer than --min-frames "
+                      f"{a.min_frames}; skipped")
+                manifest["skipped"].append({"name": f"{side}_{'AB'[cn - 1]}", "frames": int(cube.shape[0]),
+                                            "reason": f"fewer than {a.min_frames} frames with the star within "
+                                                      f"{a.max_frame_offset} px of the center ({len(dropped_off)} left out)"})
+                continue
+            ang = unwrap_degrees(ang_raw)
+            unwrapped = bool(np.any(np.abs(ang - ang_raw) > 1e-9))
             rc, used, ref_info = None, [], []
             if a.ref:
                 stack = []
@@ -409,11 +474,13 @@ def main(argv: Sequence[str]) -> int:
                     ok[rbad] = False
                     rfin = finite_half(rframes) >= a.half       # a reference frame with NaN in the cut would empty its bin too
                     ok &= rfin
+                    rcen = frame_offsets(rframes) <= a.max_frame_offset
+                    ok &= rcen
                     dpa = np.abs((rang[:, None] - ang_raw[None, :] + 180.0) % 360.0 - 180.0).min(axis=1)
                     near = ok & (dpa < a.ref_min_dpa)
                     ok &= dpa >= a.ref_min_dpa
                     ref_info.append({"night": rn, "frames": int(rang.size), "wrap_averaged": int(rbad.size),
-                                     "nan_within_cut": int((~rfin).sum()),
+                                     "nan_within_cut": int((~rfin).sum()), "off_center": int((~rcen).sum()),
                                      "within_min_dpa": int(near.sum()), "used": int(ok.sum()),
                                      "sources": {os.path.basename(x): sha256_of(x) for x in (rsrc, rasrc)}})
                     if ok.any():
@@ -436,6 +503,7 @@ def main(argv: Sequence[str]) -> int:
                     "angle_min": float(ang.min()), "angle_max": float(ang.max()),
                     "rotation_deg": float(ang.max() - ang.min()), "unwrapped": unwrapped,
                     "dropped_wrap_averaged": dropped, "dropped_nan": dropped_nan, "finite_half_px": fh_stats,
+                    "dropped_off_center": dropped_off,
                     "sources": {os.path.basename(p): sha256_of(p) for p in (src, asrc, psrc)}}
             if rc is not None:
                 r_out = os.path.join(out, f"{pre}_cube{cn}_ref_c{2 * a.half}.fits")
