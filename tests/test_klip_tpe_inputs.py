@@ -10,7 +10,7 @@ from astropy.io import fits
 TOOL = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools", "klip_tpe_inputs.py")
 
 
-def _night(root, night, n, n_by_cube=None, angles=None):
+def _night(root, night, n, n_by_cube=None, angles=None, off_cube=None):
     """Write one side's port products for a night: a centered star in 300 px frames.
 
     Parameters
@@ -26,11 +26,14 @@ def _night(root, night, n, n_by_cube=None, angles=None):
     angles : ndarray, optional
         Angles for every cube (degrees), sliced to each cube's frame count; default a linear
         ramp from -10 to 10.
+    off_cube : int, optional
+        Cube number whose frames have the star 30 px right of the center (a failed centering).
     """
     red = os.path.join(root, night, "reduced_py")
     os.makedirs(red)
     yy, xx = np.mgrid[0:300, 0:300]
     star = np.exp(-((xx - 149.5) ** 2 + (yy - 149.5) ** 2) / 72.0).astype(np.float32)
+    off = np.exp(-((xx - 179.5) ** 2 + (yy - 149.5) ** 2) / 72.0).astype(np.float32)
     h = fits.Header()
     h["XCEN"], h["YCEN"] = 149.5, 149.5
     for cn in (1, 2):
@@ -38,7 +41,8 @@ def _night(root, night, n, n_by_cube=None, angles=None):
         k = (n_by_cube or {}).get(cn, n)
         ang = np.linspace(-10, 10, k) if angles is None else np.asarray(angles[:k], dtype=float)
         for tag in ("", "_clean"):
-            fits.PrimaryHDU(np.repeat(star[None], k, axis=0), h).writeto(os.path.join(red, f"{pre}_cube{cn}_align_cen{tag}_bin.fits"))
+            img = off if cn == off_cube else star
+            fits.PrimaryHDU(np.repeat(img[None], k, axis=0), h).writeto(os.path.join(red, f"{pre}_cube{cn}_align_cen{tag}_bin.fits"))
             fits.PrimaryHDU(ang).writeto(os.path.join(red, f"{pre}_angles{cn}{tag}_bin.fits"))
         fits.PrimaryHDU(star, h).writeto(os.path.join(red, f"{pre}_cube{cn}_align_cen_clean_median_PSF.fits"))
 
@@ -138,3 +142,21 @@ def test_reference_frames_near_the_science_angles_left_out(tmp_path):
                          "--ref", "Fake_20220102", "--ref-min-dpa", "60", "--min-frames", "5"], capture_output=True, text=True)
     assert r2.returncode == 1 and "skipped" in r2.stdout                # no reference frame is 60 deg away
     assert not os.path.exists(os.path.join(root, "Fake_20220101", "klip_tpe", "inputs_rdi2"))   # nothing left behind
+
+
+def test_star_off_center_left_out(tmp_path):
+    """A science cube or a reference cube whose star is not at the center is left out."""
+    root = str(tmp_path)
+    _night(root, "Fake_20220520", 12, off_cube=2)                      # chop B centered on the wrong place
+    _night(root, "Fake_20220601", 12, angles=np.linspace(170, 150, 12), off_cube=1)
+    r = subprocess.run([sys.executable, TOOL, root, "Fake_20220520", "--tag", "adi", "--half", "40", "--psf-half", "10"],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    m = json.load(open(os.path.join(root, "Fake_20220520", "klip_tpe", "inputs_adi", "manifest.json")))
+    assert [p["name"] for p in m["partitions"]] == ["left_A"]
+    assert m["skipped"][0]["name"] == "left_B" and "not at the center" in m["skipped"][0]["reason"]
+    r2 = subprocess.run([sys.executable, TOOL, root, "Fake_20220520", "--tag", "rdi", "--half", "40", "--psf-half", "10",
+                         "--ref", "Fake_20220601", "--ref-min-dpa", "30"], capture_output=True, text=True)
+    assert r2.returncode == 1 and "no reference frames" in r2.stdout      # the one reference cube is off center
+    m2 = os.path.join(root, "Fake_20220520", "klip_tpe", "inputs_rdi", "manifest.json")
+    assert not os.path.exists(m2)

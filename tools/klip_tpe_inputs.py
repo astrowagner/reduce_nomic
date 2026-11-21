@@ -10,7 +10,8 @@ and a PSF template per partition, and optionally a reference cube (RDI). For eac
 ``NIGHT`` with at least ``--min-frames`` frames this writes, under
 ``<ARCHIVE>/<NIGHT>/klip_tpe/inputs_<TAG>/``:
 
-* the binned frames (``--product all``: every binned frame, ``<pre>_cube<n>_align_cen_bin.fits``,
+* after checking that the star is at the center (``--max-offset``), the binned frames
+  (``--product all``: every binned frame, ``<pre>_cube<n>_align_cen_bin.fits``,
   for KLIP-TPE's own frame selection; ``clean``: the IDL clean selection) cut to (2 half)² pixels
   with the star at the array center, so that KLIP-TPE's default center applies;
 * their parallactic angles (KLIP-TPE derotates counterclockwise by angle + truenorth, as the IDL
@@ -65,6 +66,10 @@ NIGHT : str
     Fewest frames a partition needs; a side and chop with fewer is left out, and the manifest
     lists it under ``skipped`` with its frame count. A reference night's cube with fewer is left
     out of the library too.
+--max-offset : float, default 3.0
+    Largest distance, pixels, of the star's peak in the median of the cut frames (and in the cut
+    PSF) from the center; a science partition or reference cube beyond it is left out (a failed
+    split or centering, such as Vega 2022-05-20's chop B cubes), with the peak in the manifest.
 --display : {"show", "none"}, default "show"
     ``show`` writes ``--show`` into both scripts (KLIP-TPE's live window), ``none`` writes
     ``--no-display``.
@@ -91,7 +96,7 @@ import json
 import os
 import shlex
 import sys
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 from astropy.io import fits
@@ -152,6 +157,33 @@ def cut_frames(path: str, half: int) -> np.ndarray:
         return np.array(d[..., y0:y0 + 2 * half, x0:x0 + 2 * half], dtype=np.float32)
 
 
+def star_offset(cube: np.ndarray, n_max: int = 60) -> Tuple[float, Tuple[int, int]]:
+    """Distance of the star's peak from the center of cut frames.
+
+    Parameters
+    ----------
+    cube : ndarray, shape (n, ny, nx) or (ny, nx)
+        Cut frames (or one image) that should have the star at ((nx - 1) / 2, (ny - 1) / 2).
+    n_max : int, default 60
+        Most frames, evenly spaced, whose median is used.
+
+    Returns
+    -------
+    offset : float
+        Distance of the brightest pixel of the median from the center, pixels (inf when the median
+        has no finite pixel).
+    peak : (int, int)
+        (x, y) of that pixel.
+    """
+    c = np.asarray(cube)
+    img = c if c.ndim == 2 else np.nanmedian(c[:: max(1, c.shape[0] // n_max)], axis=0)
+    if not np.any(np.isfinite(img)):
+        return float("inf"), (-1, -1)
+    y, x = np.unravel_index(np.nanargmax(img), img.shape)
+    ny, nx = img.shape
+    return float(np.hypot(x - (nx - 1) / 2.0, y - (ny - 1) / 2.0)), (int(x), int(y))
+
+
 def unwrap_degrees(angles: np.ndarray) -> np.ndarray:
     """Remove ±360° jumps from a time-ordered sequence of angles.
 
@@ -203,6 +235,7 @@ def main(argv: Sequence[str]) -> int:
     ap.add_argument("--min-frames", type=int, default=10)
     ap.add_argument("--display", choices=["show", "none"], default="show")
     ap.add_argument("--ref-min-dpa", type=float, default=None)
+    ap.add_argument("--max-offset", type=float, default=3.0)
     a = ap.parse_args(argv)
     if a.ref and a.ref_min_dpa is None:
         ap.error("--ref needs --ref-min-dpa (degrees; 0 keeps every reference frame)")
@@ -254,6 +287,16 @@ def main(argv: Sequence[str]) -> int:
                       f"{[round(d['angle_deg'], 2) for d in dropped]} averaged across ±180")
             ang = unwrap_degrees(ang_raw)
             unwrapped = bool(np.any(np.abs(ang - ang_raw) > 1e-9))
+            psf = cut_frames(psrc, a.psf_half)
+            off_c, pk_c = star_offset(cube)
+            off_p, pk_p = star_offset(psf)
+            if off_c > a.max_offset or off_p > a.max_offset:
+                print(f"{pre} cube{cn}: star not at the center (median peak at {pk_c} of {cube.shape[-1]} px, "
+                      f"PSF peak at {pk_p} of {psf.shape[-1]} px); skipped")
+                manifest["skipped"].append({"name": f"{side}_{'AB'[cn - 1]}", "frames": int(cube.shape[0]),
+                                            "reason": f"star not at the center: median peak at {pk_c}, PSF peak at {pk_p}, "
+                                                      f"more than {a.max_offset} px from the center"})
+                continue
             rc, used, ref_info = None, [], []
             if a.ref:
                 stack = []
@@ -272,6 +315,11 @@ def main(argv: Sequence[str]) -> int:
                         ref_info.append({"night": rn, "frames": int(rang.size), "used": 0,
                                          "reason": f"fewer than {a.min_frames} frames"})
                         continue
+                    off_r, pk_r = star_offset(rframes)
+                    if off_r > a.max_offset:                      # star not where the cube says it is
+                        ref_info.append({"night": rn, "frames": int(rang.size), "used": 0,
+                                         "reason": f"star not at the center: median peak at {pk_r}"})
+                        continue
                     ok = np.ones(rang.size, dtype=bool)
                     rbad = wrap_outliers(rang)
                     ok[rbad] = False
@@ -289,7 +337,6 @@ def main(argv: Sequence[str]) -> int:
                           f"science angles; skipped")
                     continue
                 rc = np.concatenate(stack)
-            psf = cut_frames(psrc, a.psf_half)
             c_out = os.path.join(out, f"{pre}_cube{cn}_{a.product}_c{2 * a.half}.fits")
             a_out = os.path.join(out, f"{pre}_angles{cn}_{a.product}.fits")
             p_out = os.path.join(out, f"{pre}_cube{cn}_psf{2 * a.psf_half}.fits")
