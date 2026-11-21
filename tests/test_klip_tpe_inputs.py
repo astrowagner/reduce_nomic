@@ -103,6 +103,29 @@ def test_inputs_centered_with_references(tmp_path):
     assert "--no-display" in sh3 and "--show" not in sh3 and "--no-display" in smoke3
 
 
+def test_fixed_injection_contrast_written_and_checked(tmp_path):
+    """--use-contrast reaches both scripts and the manifest; without it neither script has it; bad values stop the tool."""
+    root = str(tmp_path)
+    _night(root, "Fake_20220101", 10)
+    base = [sys.executable, TOOL, root, "Fake_20220101", "--half", "40", "--psf-half", "10"]
+    r = subprocess.run(base + ["--tag", "fix", "--ann-edges", "0", "20", "35", "--n-iter", "20", "20",
+                               "--n-init", "5", "5", "--use-contrast", "2e-4"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    kt = os.path.join(root, "Fake_20220101", "klip_tpe")
+    sh = open(os.path.join(kt, "run_fix.sh")).read()
+    smoke = open(os.path.join(kt, "run_fix_smoke.sh")).read()
+    assert "--contrast0 1e-3 --use-contrast 2e-4 \\" in sh and "--use-contrast 2e-4" in smoke
+    assert json.load(open(os.path.join(kt, "inputs_fix", "manifest.json")))["use_contrast"] == [2e-4]
+    r2 = subprocess.run(base + ["--tag", "cal"], capture_output=True, text=True)
+    assert r2.returncode == 0, r2.stderr
+    assert "--use-contrast" not in open(os.path.join(kt, "run_cal.sh")).read()
+    assert json.load(open(os.path.join(kt, "inputs_cal", "manifest.json")))["use_contrast"] is None
+    for bad in (["-1e-4"], ["abc"], ["nan"]):
+        r3 = subprocess.run(base + ["--tag", "bad", "--use-contrast"] + bad, capture_output=True, text=True)
+        assert r3.returncode != 0 and "--use-contrast" in r3.stderr
+        assert not os.path.exists(os.path.join(kt, "inputs_bad"))
+
+
 def test_transit_angles_unwrapped_and_short_cube_skipped(tmp_path):
     """Angles crossing ±180° are written without the jump, a bin averaged across the wrap is left
     out, and a cube below --min-frames is left out."""

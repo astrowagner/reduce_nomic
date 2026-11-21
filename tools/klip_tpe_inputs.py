@@ -4,6 +4,7 @@ usage: python tools/klip_tpe_inputs.py ARCHIVE NIGHT --tag TAG [--sides left rig
        [--command-archive PATH] [--min-frames 10] [--display show|none] [--ref-min-dpa DEG]
        [--psf-half 30] [--product all|clean] [--ref NIGHT ...] [--ann-edges 11 34 67]
        [--n-iter 400 400] [--n-init 60 60] [--n-remeasure 3] [--contrast0 1e-3] [--workers auto]
+       [--use-contrast C ...]
 
 KLIP-TPE's generic adapter (``klip-tpe generic``) takes one registered cube, its derotation angles
 and a PSF template per partition, and optionally a reference cube (RDI). For each side and chop of
@@ -92,6 +93,11 @@ NIGHT : str
     ``--no-display``.
 --ann-edges, --n-iter, --n-init, --n-remeasure, --contrast0, --workers
     Written into the command (KLIP-TPE options of the same names; annulus edges in pixels).
+--use-contrast : float list, optional
+    Injection contrast per annulus, in the annuli's order, held fixed instead of calibrated
+    (KLIP-TPE's ``--use-contrast``). A 0 calibrates that annulus, and so does every annulus past
+    the end of the list. Written into both scripts and recorded in the manifest
+    (``use_contrast``); without it every annulus calibrates.
 
 Returns
 -------
@@ -106,7 +112,8 @@ inputs_<TAG>/ : files
     finite centered square, at most ``--half``), the frames left out with the star off the center
     (``dropped_off_center``: index in the binned cube and offset in pixels), the reference frames
     left out for NaN (``nan_within_cut`` per reference night) or with the star off the center
-    (``off_center``), and the skipped partitions).
+    (``off_center``), the skipped partitions, and the fixed injection contrasts (``use_contrast``,
+    None when every annulus calibrates)).
 run_<TAG>.sh, run_<TAG>_smoke.sh : file
     The run and its smoke test, for Kevin to check and run.
 """
@@ -343,9 +350,19 @@ def main(argv: Sequence[str]) -> int:
     ap.add_argument("--ref-min-dpa", type=float, default=None)
     ap.add_argument("--max-offset", type=float, default=3.0)
     ap.add_argument("--max-frame-offset", type=float, default=5.0)
+    ap.add_argument("--use-contrast", nargs="+", default=None)
     a = ap.parse_args(argv)
     if a.ref and a.ref_min_dpa is None:
         ap.error("--ref needs --ref-min-dpa (degrees; 0 keeps every reference frame)")
+    use_contrast: Optional[List[float]] = None
+    if a.use_contrast is not None:
+        try:
+            use_contrast = [float(v) for v in a.use_contrast]
+        except ValueError:
+            ap.error(f"--use-contrast takes numbers, not {' '.join(a.use_contrast)}")
+        if not all(np.isfinite(v) and v >= 0 for v in use_contrast):
+            ap.error("--use-contrast values must be finite and at least 0 (0 calibrates that annulus)")
+    contrast_opt = f" --use-contrast {' '.join(a.use_contrast)}" if a.use_contrast else ""
     display = "--show" if a.display == "show" else "--no-display"
     night_dir = os.path.join(a.archive, a.night)
     red = os.path.join(night_dir, "reduced_py")
@@ -355,7 +372,7 @@ def main(argv: Sequence[str]) -> int:
     tag = "_clean" if a.product == "clean" else ""
     manifest: Dict = {"night": a.night, "tag": a.tag, "product": a.product, "half": a.half,
                       "psf_half": a.psf_half, "ref_nights": a.ref, "min_frames": a.min_frames,
-                      "partitions": [], "skipped": []}
+                      "use_contrast": use_contrast, "partitions": [], "skipped": []}
     cubes: List[str] = []
     angles: List[str] = []
     psfs: List[str] = []
@@ -548,7 +565,7 @@ def main(argv: Sequence[str]) -> int:
     lines += ["  --names " + " ".join(names) + " \\",
               "  --pxscale 0.0179 --lam 11.1e-6 --diam 8.4 \\",
               f"  --ann-edges {' '.join(a.ann_edges)} --n-iter {' '.join(a.n_iter)} --n-init {' '.join(a.n_init)} \\",
-              f"  --n-remeasure {a.n_remeasure} --n-top 6 --n-valid 8 --contrast0 {a.contrast0} \\",
+              f"  --n-remeasure {a.n_remeasure} --n-top 6 --n-valid 8 --contrast0 {a.contrast0}{contrast_opt} \\",
               f'  --workers "${{WORKERS:-{a.workers}}}" --seed 1 --verify {display} \\',
               '  --run-dir "${RUN:?}"']
     smoke_dir = there(os.path.join(night_dir, "klip_tpe", f"smoke_{a.tag}"))
@@ -556,7 +573,7 @@ def main(argv: Sequence[str]) -> int:
     smoke[1] = f"# KLIP-TPE smoke test for {a.night} ({a.tag}): 10 evaluations on the first annulus; its numbers mean nothing"
     smoke += ["  --names " + " ".join(names) + " \\",
               "  --pxscale 0.0179 --lam 11.1e-6 --diam 8.4 \\",
-              f"  --ann-edges {' '.join(a.ann_edges[:2])} --n-iter 10 --n-init 5 --n-top 1 --n-valid 1 --contrast0 {a.contrast0} \\",
+              f"  --ann-edges {' '.join(a.ann_edges[:2])} --n-iter 10 --n-init 5 --n-top 1 --n-valid 1 --contrast0 {a.contrast0}{contrast_opt} \\",
               f'  --workers "${{WORKERS:-16}}" --seed 1 {display} \\',
               '  --run-dir "${RUN:?}"']
     for name, body in ((f"run_{a.tag}.sh", lines), (f"run_{a.tag}_smoke.sh", smoke)):
