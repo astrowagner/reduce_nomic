@@ -39,6 +39,11 @@ These quirks change results, so the port keeps them by default:
 - **The summary** records the frames, their range, what was done and the pointing (`bad_pa`). `drop` skips the frames instead, and `keep` reproduces IDL. Nights with `fix_pa` recompute every angle and are unaffected.
 - **Aside:** the IDL `ra` for β UMa (11.0423 h, used with `fix_pa` on β UMa_5 and _6) gives angles 0.14° above LBT_PARA on 2023-02-05; the headers' 11.03080 h matches.
 
+**Angles across the ±180° wrap** (`angles.mean_angle`). A star that transits north of the zenith (Vega, Alcor, β UMa at the LBT) has a parallactic angle that passes through ±180° at transit. IDL averages the angles of a chop segment and of a bin arithmetically, so the bin that holds the crossing gets a wrong angle: on Vega 2022-05-21 (port before this change), -28.61° between bins at -178.29° and +179.38° (left, chop A), 168.12° between -177.57° and 178.27° (right, chop A) and 162.03° between -178.07° and 176.68° (right, chop B), one bin per cube.
+- **The port** averages each group relative to its first angle when the group spans more than 180°, and returns the arithmetic mean (bit for bit) otherwise, so other groups are unchanged.
+- **Products made before the change** keep the wrong bin. `angles.wrap_outliers` finds it (a bin off the short arc between neighbors on opposite sides of the wrap), and `tools/klip_tpe_inputs.py` leaves it out.
+- **IDL products of transit nights** carry the same wrong bin. Vega 2022-05-21 (`IDL/reduced/Vega_4_*_angles*_bin.sav`): -157.86° (left A), -132.71° (left B), 168.12° (right A) and 162.02° (right B); the right cubes' clean selections keep theirs.
+
 **Per-night port decisions** (`config/nights_port.json`). Settings the port gives a night beyond its IDL block, each with its reason, applied after the block and before `--set`: β UMa 2023-02-05 (β UMa_8) uses all its frames, including the 1,452 the sort recovered from GJ 504's folder (`frames` 155443–195100).
 
 **File order.** IDL's `FILE_SEARCH(/nosort)` lists files unsorted on patrick's RAID. The port always sorts by stem and frame number, as the Mac's volume did.

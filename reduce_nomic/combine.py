@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 from . import idl
+from .angles import mean_angle
 from .frames import RawFrame, read_frame
 
 
@@ -444,7 +445,8 @@ class Segment:
     nod : str
         ``NOD_A`` (the IDL predecessor sets every frame to nod A).
     angle : float
-        Mean parallactic angle in degrees (NaN for a sky segment set to NaN).
+        Mean parallactic angle in degrees, correct across the ±180° wrap (``angles.mean_angle``;
+        NaN for a sky segment set to NaN).
     coadd : int
         Number of frames (IDL ``COADD``).
     eff_expt : float
@@ -558,7 +560,7 @@ def build_segments(states: Sequence[FrameState], st: Dict, sky_round: bool,
                 if k > st["min_n"] and k > 2 and st["skip_first"] and st["skip_last"]:
                     nfr = k - 3
                 nan_frame = bool(k > 2 and sky_round and st["limit_sky_to_one"])
-                ang = float(np.nanmean(cur_angles)) if len(cur) > 1 else float(cur_angles[0])
+                ang = mean_angle(cur_angles, ignore_nan=True) if len(cur) > 1 else float(cur_angles[0])
                 segs.append(Segment(positions=list(cur), chop=last_chop, nod=last_nod,
                                     angle=float("nan") if nan_frame else ang, coadd=k - 1,
                                     eff_expt=s.dit * nfr, inum=s.inum, date=s.date, nan_frame=nan_frame))

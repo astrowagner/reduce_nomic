@@ -85,10 +85,13 @@ def test_inputs_centered_with_references(tmp_path):
 
 
 def test_transit_angles_unwrapped_and_short_cube_skipped(tmp_path):
-    """Angles crossing ±180° are written without the jump; a cube below --min-frames is left out."""
+    """Angles crossing ±180° are written without the jump, a bin averaged across the wrap is left
+    out, and a cube below --min-frames is left out."""
     root = str(tmp_path)
-    ang = np.array([170.0, 175.0, 179.5, -178.0, -172.0, -165.0, -160.0, -150.0, -140.0, -130.0, -120.0, -110.0])
-    _night(root, "Fake_20220521", 12, n_by_cube={2: 1}, angles=ang)
+    wrong = 61.0                                         # a bin averaged across the wrap
+    full = np.array([170.0, 175.0, 179.5, wrong, -178.0, -172.0, -165.0, -160.0, -150.0, -140.0, -130.0, -120.0, -110.0])
+    ang = np.delete(full, 3)
+    _night(root, "Fake_20220521", 13, n_by_cube={2: 1}, angles=full)
     r = subprocess.run([sys.executable, TOOL, root, "Fake_20220521", "--tag", "adi", "--half", "40", "--psf-half", "10"],
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
@@ -100,6 +103,8 @@ def test_transit_angles_unwrapped_and_short_cube_skipped(tmp_path):
     assert [p["name"] for p in m["partitions"]] == ["left_A"]
     p = m["partitions"][0]
     assert p["unwrapped"] and abs(p["rotation_deg"] - 80.0) < 1e-9 and p["angle_first"] == 170.0
+    assert p["frames"] == 12 and p["dropped_wrap_averaged"] == [{"index": 3, "angle_deg": wrong}]
+    assert fits.getdata(os.path.join(d, "Fake_20220521_left_cube1_all_c80.fits")).shape[0] == 12
     assert m["skipped"] == [{"name": "left_B", "frames": 1, "reason": "fewer than 10 frames"}]
     assert not os.path.exists(os.path.join(d, "Fake_20220521_left_cube2_all_c80.fits"))
     sh = open(os.path.join(root, "Fake_20220521", "klip_tpe", "run_adi.sh")).read()

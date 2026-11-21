@@ -12,6 +12,7 @@ from typing import Dict, Optional, Sequence, Tuple
 import numpy as np
 
 from . import idl
+from .angles import mean_angle
 
 
 def median_rows(cube: np.ndarray, index: np.ndarray, block: int = 128) -> np.ndarray:
@@ -64,7 +65,8 @@ def prebin(cube: np.ndarray, angles: Sequence[float], exptimes: Sequence[float],
         the IDL median with ``/EVEN`` (``median_rows``) or the NaN-ignoring mean; the last group
         may be shorter, and a one-frame group is that frame.
     angles_b : ndarray, shape (b,)
-        Mean angle of each group.
+        Mean angle of each group, degrees (``angles.mean_angle``: correct across the ±180°
+        wrap, where the IDL predecessor's arithmetic mean is not).
     exptimes_b : ndarray, shape (b,)
         Summed exposure time of each group.
     """
@@ -83,7 +85,7 @@ def prebin(cube: np.ndarray, angles: Sequence[float], exptimes: Sequence[float],
             out.append(median_rows(cube, gi))
         else:
             out.append(np.nanmean(cube[gi], axis=0))
-        aa.append(a[s:s + n].mean())
+        aa.append(mean_angle(a[s:s + n]))
         ee.append(e[s:s + n].sum())
     return np.asarray(out), np.asarray(aa), np.asarray(ee)
 

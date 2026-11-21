@@ -17,7 +17,9 @@ and a PSF template per partition, and optionally a reference cube (RDI). For eac
   predecessor does with ``rot(frame, -angle - truenorth)``), unwrapped in time order so that a
   night whose angles cross ±180° (a transit north of the zenith) has no jump: KLIP-TPE's reference
   selection uses the plain difference |angle_i - angle_j|, and a derotation by angle + 360° is the
-  same rotation;
+  same rotation. Binned frames whose angle was averaged across the wrap by a port version before
+  the wrap-aware mean (``reduce_nomic.angles.wrap_outliers``) are left out rather than given a
+  guessed angle, and listed in the manifest;
 * the median PSF of the IDL-clean frames cut to (2 psf_half)² pixels as the injection template:
   KLIP-TPE normalizes it to unit total flux, so contrasts are flux ratios to the star's flux
   within that box (the frames are peak-scaled, so every frame shares the unit);
@@ -67,7 +69,8 @@ inputs_<TAG>/ : files
     ``<pre>_angles<n>_<product>.fits`` (degrees, unwrapped), ``<pre>_cube<n>_psf<2 psf_half>.fits``,
     with ``--ref`` ``<pre>_cube<n>_ref_c<2 half>.fits``, and ``manifest.json`` (sources with their
     SHA-256, cuts, frame counts, first and last angle, rotation span, whether the angles were
-    unwrapped, and the skipped partitions).
+    unwrapped, the binned frames left out for a wrongly averaged angle, and the skipped
+    partitions).
 run_<TAG>.sh, run_<TAG>_smoke.sh : file
     The run and its smoke test, for Kevin to check and run.
 """
@@ -83,6 +86,9 @@ from typing import Dict, List, Optional, Sequence
 
 import numpy as np
 from astropy.io import fits
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from reduce_nomic.angles import wrap_outliers  # noqa: E402
 
 
 def sha256_of(path: str, block: int = 1 << 24) -> str:
@@ -240,6 +246,13 @@ def main(argv: Sequence[str]) -> int:
                 raise SystemExit(f"{asrc}: {len(ang_raw)} angles for {cube.shape[0]} frames")
             if not np.all(np.isfinite(ang_raw)):
                 raise SystemExit(f"{asrc}: {int(np.sum(~np.isfinite(ang_raw)))} angles are not finite")
+            bad = wrap_outliers(ang_raw)
+            dropped = [{"index": int(i), "angle_deg": float(ang_raw[i])} for i in bad]
+            if bad.size:
+                keep = np.setdiff1d(np.arange(ang_raw.size), bad)
+                cube, ang_raw = cube[keep], ang_raw[keep]
+                print(f"{pre} cube{cn}: left out binned frame(s) {bad.tolist()} with angle(s) "
+                      f"{[round(d['angle_deg'], 2) for d in dropped]} averaged across ±180")
             ang = unwrap_degrees(ang_raw)
             unwrapped = bool(np.any(np.abs(ang - ang_raw) > 1e-9))
             psf = cut_frames(psrc, a.psf_half)
@@ -253,6 +266,7 @@ def main(argv: Sequence[str]) -> int:
                     "frames": int(cube.shape[0]), "angle_first": float(ang[0]), "angle_last": float(ang[-1]),
                     "angle_min": float(ang.min()), "angle_max": float(ang.max()),
                     "rotation_deg": float(ang.max() - ang.min()), "unwrapped": unwrapped,
+                    "dropped_wrap_averaged": dropped,
                     "sources": {os.path.basename(p): sha256_of(p) for p in (src, asrc, psrc)}}
             if rc is not None:
                 r_out = os.path.join(out, f"{pre}_cube{cn}_ref_c{2 * a.half}.fits")
