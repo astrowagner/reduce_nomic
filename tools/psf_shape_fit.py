@@ -302,8 +302,14 @@ def plot(lim_rows: List[dict], rot: Dict, a: argparse.Namespace, seq: cp.DwarfSe
     import matplotlib.pyplot as plt
 
     to_c = lambda spt: float(cp.absmag_to_contrast(seq.m_w3_of(spt), a.star_mag, a.parallax))  # noqa: E731
-    fig, ax = plt.subplots(figsize=(9.5, 6.2))
-    fig.subplots_adjust(left=0.1, right=0.97, top=0.80, bottom=0.27)
+    nights = sorted({r["night"] for r in lim_rows})
+    n_lab = sum(1 for night in nights for m in (1, 2) if any(r["night"] == night and int(r["spin"]) == m for r in lim_rows))
+    # Heights in inches: titles and the top axis, the plot, the x label, one legend row per curve,
+    # the footnote; the figure grows with the legend so that nothing overlaps.
+    top_in, plot_in, xlab_in, leg_in, foot_in = 1.25, 4.3, 0.55, 0.2 * n_lab + 0.15, 0.45
+    height = top_in + plot_in + xlab_in + leg_in + foot_in
+    fig, ax = plt.subplots(figsize=(9.5, height))
+    fig.subplots_adjust(left=0.1, right=0.97, top=1 - top_in / height, bottom=(xlab_in + leg_in + foot_in) / height)
     ax.set_facecolor("#fcfcfb")
     ax.grid(True, color=GRID, lw=0.6)
     ax.set_axisbelow(True)
@@ -314,9 +320,8 @@ def plot(lim_rows: List[dict], rot: Dict, a: argparse.Namespace, seq: cp.DwarfSe
         ax.text(21, to_c(spt) * 1.04, spt, ha="left", va="bottom", fontsize=8, color=INK2)
     x05 = float(cp.arcsec_of_au(0.5, a.parallax)) * 1000
     ax.axvline(x05, color=INK, lw=1.0, ls=(0, (1, 2)))
-    ax.text(x05 * 1.03, 0.97, f"0.5 au ({x05:.0f} mas)", rotation=90, ha="left", va="top", fontsize=8.5, color=INK,
+    ax.text(x05 * 1.03, 0.03, f"0.5 au ({x05:.0f} mas)", rotation=90, ha="left", va="bottom", fontsize=8.5, color=INK,
             transform=ax.get_xaxis_transform())
-    nights = sorted({r["night"] for r in lim_rows})
     for k, night in enumerate(nights):
         span = max(s[4] for s in rot[night])
         for m, ls in ((1, "-"), (2, (0, (5, 2.5)))):
@@ -347,8 +352,9 @@ def plot(lim_rows: List[dict], rot: Dict, a: argparse.Namespace, seq: cp.DwarfSe
     top.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
     top.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
     ax.set_title(f"Companions Inside λ/D from the PSF Shape ({a.name})", fontsize=11, color=INK, pad=34)
-    ax.legend(loc="upper left", bbox_to_anchor=(0.0, -0.12), ncol=1, fontsize=8, frameon=False)
-    fig.text(0.1, 0.012, f"Formal: {ps.rayleigh_threshold():.2f}σ of the per-frame noise model. Empirical: that noise scaled to the "
+    ax.legend(loc="upper left", bbox_to_anchor=(0.1, (leg_in + foot_in) / height), bbox_transform=fig.transFigure,
+              ncol=1, fontsize=8, frameon=False, borderaxespad=0.0)
+    fig.text(0.1, 0.1 / height, f"Formal: {ps.rayleigh_threshold():.2f}σ of the per-frame noise model. Empirical: that noise scaled to the "
              f"scatter of the noise-only quantities,\nwith the F(2, ν) threshold at the same false-alarm probability "
              f"(one-sided 5σ). Gaussian weight σ = {a.sigma_w:g} px.", fontsize=7.5, color=INK2, va="bottom")
     fig.savefig(out_base + ".png", dpi=200, facecolor="white")
