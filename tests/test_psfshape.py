@@ -61,3 +61,25 @@ def test_combine_and_threshold():
     assert out["chi2"] == pytest.approx(0.0)
     assert ps.rayleigh_threshold() == pytest.approx(5.489, abs=1e-3)
     assert ps.rayleigh_threshold(trials=2) > ps.rayleigh_threshold()
+
+
+def test_small_sample_threshold_and_empirical_scale():
+    """The F(2, nu) threshold tends to the Rayleigh one and has the right tail; the scale is the
+    pooled reduced chi-square of the noise-only quantities."""
+    from reduce_nomic import psfshape as ps
+    p = 2.866515719e-7
+    assert abs(ps.small_sample_threshold(10 ** 7, p) - ps.rayleigh_threshold(p)) < 1e-3
+    t = ps.small_sample_threshold(10, p)
+    assert abs(t - 13.91) < 0.01
+    x = t ** 2 / 2.0
+    assert abs((1 + 2 * x / 10) ** (-5) - p) < 1e-12
+    s, nu = ps.empirical_scale(4.0, [1.0, 1.0, np.sqrt(2.0)])
+    assert nu == 10 and abs(s - np.sqrt((4.0 + 1 + 1 + 2) / 10)) < 1e-12
+    rng = np.random.default_rng(0)                  # Gaussian noise of scale 3 gives s near 3
+    vals = []
+    for _ in range(2000):
+        z = 3.0 * (rng.normal(size=3) + 1j * rng.normal(size=3))
+        bp = 3.0 * (rng.normal(size=3) + 1j * rng.normal(size=3)) + 0.5
+        chi2 = float(np.sum(np.abs(bp - bp.mean()) ** 2))
+        vals.append(ps.empirical_scale(chi2, np.abs(z))[0] ** 2)
+    assert abs(np.mean(vals) - 9.0) < 0.3

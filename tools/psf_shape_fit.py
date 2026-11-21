@@ -2,7 +2,7 @@
 
 usage: python tools/psf_shape_fit.py CUTOUT [CUTOUT ...] --out DIR --name NAME [--sigma-w 3]
        [--spins 1 2] [--drift 1] [--seps-mas 30,40,50,65,80,100,130,160,200,270] [--inject 0.02]
-       [--n-phi 8] [--parallax 130.23] [--star-mag 0.0] [--no-plot]
+       [--n-phi 8] [--parallax 130.23] [--star-mag 0.0] [--keep-wrap-averaged] [--no-plot]
 
 Each ``CUTOUT`` is a file from ``tools/extract_psf_cutouts.py``: the registered core of every
 binned frame of one night, side and chop, with parallactic angles. For each, the Gaussian-weighted
@@ -15,6 +15,14 @@ amplitude per unit flux ratio at each separation. The frame sets of one night ar
 (``psfshape.combine``), and the flux ratio above which a companion would have been detected
 (false-alarm probability of a one-sided 5σ, ``psfshape.rayleigh_threshold``) is turned into a
 spectral type and mass with ``reduce_nomic.companions``.
+
+Two limits are given. The formal one uses the per-frame residual noise of the fits. The empirical
+one scales that noise by s, estimated from the quantities that hold noise only: the scatter of the
+sets' sense +1 estimates about their mean and the sets' sense -1 amplitudes
+(``psfshape.empirical_scale``, ν = 4K - 2 degrees of freedom for K sets), and uses the threshold
+of F(2, ν) at the same false-alarm probability (``psfshape.small_sample_threshold``), since s is
+itself estimated from few numbers. Binned frames whose angle was averaged across the ±180° wrap
+(``reduce_nomic.angles.wrap_outliers``) are left out.
 
 Parameters
 ----------
@@ -40,24 +48,29 @@ CUTOUT : str
     Parallax, mas (for projected separations and companion types).
 --star-mag : float, default 0.0
     The star's magnitude in the band (N').
+--keep-wrap-averaged : flag
+    Keep binned frames whose angle was averaged across the ±180° wrap.
 --no-plot : flag
     Skip the figure.
 
 Returns
 -------
 <out>/<name>_fits.csv : file
-    One row per cutout and spin: frames, angle range, turning amplitude and its error in both
-    senses, residual autocorrelation and static term.
+    One row per cutout and spin: frames, frames left out for a wrap-averaged angle, angle range,
+    turning amplitude and its error in both senses, residual autocorrelation and static term.
 <out>/<name>_response.csv : file
     One row per cutout, spin and separation: response (moment per unit flux ratio), its spread
     over angles and the phase scatter.
 <out>/<name>_limits.csv : file
     One row per night, spin and separation: combined flux-ratio estimate, its error, SNR, χ²,
-    the detection limit and the companion type and mass at the limit, and the null (sense -1) SNR.
+    the null (sense -1) SNR, the formal detection limit with the companion type and mass at it,
+    and the empirical noise scale s, its degrees of freedom ν, the threshold t_ν and the
+    empirical limit with the companion type and mass at it.
 <out>/<name>_summary.txt : file
     Settings, rotation per night, and the limits at each separation.
 <out>/<name>_limits.png, .pdf : file
-    Flux-ratio limit against separation per night and spin (not with ``--no-plot``).
+    Empirical (thick) and formal (thin) flux-ratio limits against separation per night and spin
+    (not with ``--no-plot``).
 """
 from __future__ import annotations
 
@@ -75,6 +88,7 @@ from astropy.io import fits
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from reduce_nomic import companions as cp  # noqa: E402
 from reduce_nomic import psfshape as ps  # noqa: E402
+from reduce_nomic.angles import wrap_outliers  # noqa: E402
 
 SLOTS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"]
 MARKERS = ["o", "s", "^", "D", "v", "P"]
@@ -156,6 +170,7 @@ def main(argv: Sequence[str]) -> int:
     ap.add_argument("--n-phi", type=int, default=8)
     ap.add_argument("--parallax", type=float, default=130.23)
     ap.add_argument("--star-mag", type=float, default=0.0)
+    ap.add_argument("--keep-wrap-averaged", action="store_true")
     ap.add_argument("--no-plot", action="store_true")
     a = ap.parse_args(argv)
     seps = [float(x) for x in a.seps_mas.split(",")]
@@ -167,6 +182,12 @@ def main(argv: Sequence[str]) -> int:
     rot = {}
     for path in a.cutouts:
         c = load_cutout(path)
+        bad = np.zeros(0, dtype=int) if a.keep_wrap_averaged else wrap_outliers(c["q"])
+        if bad.size:
+            keep = np.setdiff1d(np.arange(c["q"].size), bad)
+            print(f"{c['label']}: left out frame(s) {bad.tolist()} with angle(s) "
+                  f"{np.round(c['q'][bad], 2).tolist()} averaged across ±180", flush=True)
+            c["frames"], c["q"] = c["frames"][keep], c["q"][keep]
         n, ny, nx = c["frames"].shape
         bg = (min(ny, nx) * 0.36, min(ny, nx) * 0.49)
         mom = ps.weighted_moments(c["frames"], a.sigma_w, c["x0"], c["y0"], bg_annulus=bg)
@@ -178,7 +199,7 @@ def main(argv: Sequence[str]) -> int:
             fn = ps.fit_rotating(mom[f"spin{m}"], c["q"], m, -1, a.drift)
             fits_s[m] = fp
             fit_rows.append({"cutout": c["label"], "night": c["night"], "side": c["side"], "chop": "AB"[c["cube"] - 1],
-                             "spin": m, "n": fp.n, "q_min": f"{c['q'].min():.2f}", "q_max": f"{c['q'].max():.2f}",
+                             "spin": m, "n": fp.n, "dropped_wrap": int(bad.size), "q_min": f"{c['q'].min():.2f}", "q_max": f"{c['q'].max():.2f}",
                              "q_span": f"{span:.2f}", "b_abs": f"{abs(fp.b):.3e}", "sigma_b": f"{fp.sigma_b:.3e}",
                              "snr": f"{abs(fp.b) / fp.sigma_b:.2f}", "rho": f"{fp.rho:.2f}",
                              "b_abs_null": f"{abs(fn.b):.3e}", "sigma_b_null": f"{fn.sigma_b:.3e}",
@@ -209,13 +230,20 @@ def main(argv: Sequence[str]) -> int:
             null = ps.combine([it[3].b for it in items], [it[3].sigma_b for it in items], [it[1][s] for it in items])
             flim = t1 * comb["sigma_f"]
             lim = cp.companion_limits(np.array([flim]), a.star_mag, a.parallax, seq)
+            scale, nu = ps.empirical_scale(comb["chi2"], [abs(it[3].b) / it[3].sigma_b for it in items])
+            t_nu = ps.small_sample_threshold(nu)
+            flim_e = t_nu * scale * comb["sigma_f"]
+            lim_e = cp.companion_limits(np.array([flim_e]), a.star_mag, a.parallax, seq)
             lim_rows.append({"night": night, "spin": m, "sets": len(items), "sep_mas": f"{s:g}",
                              "sep_au": f"{float(cp.projected_au(s / 1000.0, a.parallax)):.3f}",
                              "f_est": f"{comb['f_abs']:.4e}", "sigma_f": f"{comb['sigma_f']:.4e}",
                              "snr": f"{comb['snr']:.2f}", "chi2": f"{comb['chi2']:.1f}", "dof_chi2": 2 * (len(items) - 1),
                              "f_limit": f"{flim:.4e}", "spt_at_limit": lim["spt"][0] or lim["beyond"][0],
                              "mass_at_limit": f"{lim['mass'][0]:.3f}" if np.isfinite(lim["mass"][0]) else "",
-                             "snr_null": f"{null['snr']:.2f}"})
+                             "snr_null": f"{null['snr']:.2f}", "noise_scale": f"{scale:.2f}", "nu": nu,
+                             "t_nu": f"{t_nu:.2f}", "f_limit_emp": f"{flim_e:.4e}",
+                             "spt_at_limit_emp": lim_e["spt"][0] or lim_e["beyond"][0],
+                             "mass_at_limit_emp": f"{lim_e['mass'][0]:.3f}" if np.isfinite(lim_e["mass"][0]) else ""})
     write_csv(base + "_limits.csv", lim_rows)
 
     lines = [f"PSF-shape fit: sigma_w {a.sigma_w} px, spins {a.spins}, drift order {a.drift}, injected flux ratio {a.inject}, "
@@ -229,9 +257,14 @@ def main(argv: Sequence[str]) -> int:
     c_k7 = float(cp.absmag_to_contrast(seq.m_w3_of("K7V"), a.star_mag, a.parallax))
     c_k0 = float(cp.absmag_to_contrast(seq.m_w3_of("K0V"), a.star_mag, a.parallax))
     lines.append(f"K0V-K7V companions: flux ratio {c_k7:.4f}-{c_k0:.4f} at N'")
-    lines.append("night, spin, separation: flux-ratio limit (companion at the limit) | estimate +/- sigma, SNR | null SNR | chi2/dof")
+    lines.append("empirical limit = t_nu x s x sigma: s scales the per-frame noise model to the scatter of the noise-only "
+                 "quantities (nu degrees of freedom), t_nu is the F(2, nu) threshold at the same false-alarm probability")
+    lines.append("night, spin, separation: empirical limit (companion at it) [s, nu, t_nu] | formal limit (companion at it) | "
+                 "estimate +/- sigma, SNR | null SNR | chi2/dof")
     for r in lim_rows:
         lines.append(f"  {r['night']} spin {r['spin']} {float(r['sep_mas']):5.0f} mas ({float(r['sep_au']):.2f} au): "
+                     f"{float(r['f_limit_emp']):.4f} ({r['spt_at_limit_emp']}, {r['mass_at_limit_emp']} Msun) "
+                     f"[s {r['noise_scale']}, nu {r['nu']}, t {r['t_nu']}] | "
                      f"{float(r['f_limit']):.4f} ({r['spt_at_limit']}, {r['mass_at_limit']} Msun) | "
                      f"{float(r['f_est']):.4f} +/- {float(r['sigma_f']):.4f}, SNR {r['snr']} | null {r['snr_null']} | "
                      f"{r['chi2']}/{r['dof_chi2']}")
@@ -270,7 +303,7 @@ def plot(lim_rows: List[dict], rot: Dict, a: argparse.Namespace, seq: cp.DwarfSe
 
     to_c = lambda spt: float(cp.absmag_to_contrast(seq.m_w3_of(spt), a.star_mag, a.parallax))  # noqa: E731
     fig, ax = plt.subplots(figsize=(9.5, 6.2))
-    fig.subplots_adjust(left=0.1, right=0.97, top=0.84, bottom=0.25)
+    fig.subplots_adjust(left=0.1, right=0.97, top=0.80, bottom=0.27)
     ax.set_facecolor("#fcfcfb")
     ax.grid(True, color=GRID, lw=0.6)
     ax.set_axisbelow(True)
@@ -281,7 +314,8 @@ def plot(lim_rows: List[dict], rot: Dict, a: argparse.Namespace, seq: cp.DwarfSe
         ax.text(21, to_c(spt) * 1.04, spt, ha="left", va="bottom", fontsize=8, color=INK2)
     x05 = float(cp.arcsec_of_au(0.5, a.parallax)) * 1000
     ax.axvline(x05, color=INK, lw=1.0, ls=(0, (1, 2)))
-    ax.text(x05 * 1.03, 0.62, f"0.5 au ({x05:.0f} mas)", rotation=90, ha="left", va="top", fontsize=8.5, color=INK)
+    ax.text(x05 * 1.03, 0.97, f"0.5 au ({x05:.0f} mas)", rotation=90, ha="left", va="top", fontsize=8.5, color=INK,
+            transform=ax.get_xaxis_transform())
     nights = sorted({r["night"] for r in lim_rows})
     for k, night in enumerate(nights):
         span = max(s[4] for s in rot[night])
@@ -290,15 +324,17 @@ def plot(lim_rows: List[dict], rot: Dict, a: argparse.Namespace, seq: cp.DwarfSe
             if not rr:
                 continue
             x = [float(r["sep_mas"]) for r in rr]
-            y = [float(r["f_limit"]) for r in rr]
+            y = [float(r["f_limit_emp"]) for r in rr]
+            yf = [float(r["f_limit"]) for r in rr]
             ax.plot(x, y, color=SLOTS[k % len(SLOTS)], ls=ls, lw=1.8 if m == 1 else 1.3, marker=MARKERS[k % len(MARKERS)],
                     ms=5, mfc=SLOTS[k % len(SLOTS)] if m == 1 else "white", mec=SLOTS[k % len(SLOTS)],
                     label=f"{night[-8:-4]}-{night[-4:-2]}-{night[-2:]}, Spin {m} ({'Lopsidedness' if m == 1 else 'Elongation'}), "
-                          f"{span:.0f}° Rotation")
+                          f"{span:.0f}° Rotation: Empirical (Thick), Formal (Thin)")
+            ax.plot(x, yf, color=SLOTS[k % len(SLOTS)], ls=ls, lw=0.8, alpha=0.7)
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlim(20, 300)
-    ax.set_ylim(1e-3, 1.0)
+    ax.set_ylim(1e-3, 3.0)
     ax.set_xticks([20, 30, 50, 65, 100, 150, 200, 300])
     ax.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
     ax.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
@@ -309,11 +345,12 @@ def plot(lim_rows: List[dict], rot: Dict, a: argparse.Namespace, seq: cp.DwarfSe
     top.set_xlabel("Projected Separation (au)", fontsize=10, color=INK)
     top.set_xticks([0.2, 0.3, 0.5, 1, 2])
     top.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
+    top.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
     ax.set_title(f"Companions Inside λ/D from the PSF Shape ({a.name})", fontsize=11, color=INK, pad=34)
     ax.legend(loc="upper left", bbox_to_anchor=(0.0, -0.12), ncol=1, fontsize=8, frameon=False)
-    fig.text(0.1, 0.01, f"Limit: {ps.rayleigh_threshold():.2f}σ per component of the turning term (false-alarm "
-             f"probability of a one-sided 5σ); weight σ = {a.sigma_w:g} px; responses from injected copies of each frame's PSF.",
-             fontsize=7.5, color=INK2)
+    fig.text(0.1, 0.012, f"Formal: {ps.rayleigh_threshold():.2f}σ of the per-frame noise model. Empirical: that noise scaled to the "
+             f"scatter of the noise-only quantities,\nwith the F(2, ν) threshold at the same false-alarm probability "
+             f"(one-sided 5σ). Gaussian weight σ = {a.sigma_w:g} px.", fontsize=7.5, color=INK2, va="bottom")
     fig.savefig(out_base + ".png", dpi=200, facecolor="white")
     fig.savefig(out_base + ".pdf", facecolor="white")
     plt.close(fig)

@@ -48,8 +48,11 @@ def test_inputs_centered_with_references(tmp_path):
     root = str(tmp_path)
     _night(root, "Fake_20220101", 10)
     _night(root, "Fake_20220102", 7)
+    r0 = subprocess.run([sys.executable, TOOL, root, "Fake_20220101", "--tag", "rdi", "--half", "40", "--psf-half", "10",
+                         "--ref", "Fake_20220102"], capture_output=True, text=True)
+    assert r0.returncode != 0 and "--ref-min-dpa" in r0.stderr              # the exclusion must be chosen
     r = subprocess.run([sys.executable, TOOL, root, "Fake_20220101", "--tag", "rdi", "--half", "40", "--psf-half", "10",
-                        "--ref", "Fake_20220102", "Missing_1"], capture_output=True, text=True)
+                        "--ref", "Fake_20220102", "Missing_1", "--ref-min-dpa", "0"], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
     d = os.path.join(root, "Fake_20220101", "klip_tpe", "inputs_rdi")
     cube = fits.getdata(os.path.join(d, "Fake_20220101_left_cube1_all_c80.fits"))
@@ -109,3 +112,23 @@ def test_transit_angles_unwrapped_and_short_cube_skipped(tmp_path):
     assert not os.path.exists(os.path.join(d, "Fake_20220521_left_cube2_all_c80.fits"))
     sh = open(os.path.join(root, "Fake_20220521", "klip_tpe", "run_adi.sh")).read()
     assert "--names left_A \\" in sh and "cube2" not in sh
+
+
+def test_reference_frames_near_the_science_angles_left_out(tmp_path):
+    """Reference frames within --ref-min-dpa of any science angle are left out of the library."""
+    root = str(tmp_path)
+    _night(root, "Fake_20220101", 10)                                    # science angles -10 .. 10
+    _night(root, "Fake_20220102", 7, angles=np.array([-50.0, -40.0, -30.0, -12.0, 0.0, 12.0, 30.0]))
+    r = subprocess.run([sys.executable, TOOL, root, "Fake_20220101", "--tag", "rdi", "--half", "40", "--psf-half", "10",
+                        "--ref", "Fake_20220102", "--ref-min-dpa", "15"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    d = os.path.join(root, "Fake_20220101", "klip_tpe", "inputs_rdi")
+    assert fits.getdata(os.path.join(d, "Fake_20220101_left_cube1_ref_c80.fits")).shape[0] == 4   # -50, -40, -30, 30
+    m = json.load(open(os.path.join(d, "manifest.json")))
+    det = m["partitions"][0]["ref_detail"][0]
+    assert (det["frames"], det["within_min_dpa"], det["used"], det["wrap_averaged"]) == (7, 3, 4, 0)
+    assert m["partitions"][0]["ref_min_dpa"] == 15.0
+    r2 = subprocess.run([sys.executable, TOOL, root, "Fake_20220101", "--tag", "rdi2", "--half", "40", "--psf-half", "10",
+                         "--ref", "Fake_20220102", "--ref-min-dpa", "60"], capture_output=True, text=True)
+    assert r2.returncode == 1 and "skipped" in r2.stdout                # no reference frame is 60 deg away
+    assert not os.path.exists(os.path.join(root, "Fake_20220101", "klip_tpe", "inputs_rdi2"))   # nothing left behind

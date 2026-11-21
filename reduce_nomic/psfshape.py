@@ -19,7 +19,7 @@ test with the same sensitivity to drifts.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Sequence
+from typing import Dict, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -341,3 +341,56 @@ def rayleigh_threshold(p: float = 2.866515719e-7, trials: int = 1) -> float:
         probability p of arising from noise (5.49 for one try).
     """
     return float(np.sqrt(2.0 * np.log(trials / p)))
+
+
+def small_sample_threshold(nu: int, p: float = 2.866515719e-7) -> float:
+    """Detection threshold for the modulus of a complex amplitude when the noise scale is estimated.
+
+    With the per-component noise scaled by s, where s² is estimated from a χ² with ν degrees of
+    freedom of quantities that hold noise only, |z|² / (2 s² σ²) follows F(2, ν), whose tail is
+    (1 + 2x/ν)^(-ν/2).
+
+    Parameters
+    ----------
+    nu : int
+        Degrees of freedom of the noise-scale estimate.
+    p : float, default 2.866515719e-7
+        False-alarm probability (the one-sided tail of 5σ for a Gaussian).
+
+    Returns
+    -------
+    t : float
+        Threshold in units of the scaled per-component standard error, s σ: sqrt(ν (p^(-2/ν) - 1)).
+        It tends to ``rayleigh_threshold(p)`` (5.49) for large ν and is 13.9 for ν = 10.
+    """
+    if nu <= 0:
+        return float("inf")
+    return float(np.sqrt(nu * (p ** (-2.0 / nu) - 1.0)))
+
+
+def empirical_scale(chi2_plus: float, null_snr: Sequence[float]) -> Tuple[float, int]:
+    """Scale of the real noise relative to the per-frame noise model, from noise-only quantities.
+
+    Two quantities hold no companion signal: the scatter of the K sets' sense +1 estimates about
+    their weighted mean (``combine``'s χ², 2 (K - 1) degrees of freedom: a companion common to
+    the sets cancels in it), and the sense -1 (null) amplitudes, Σ_k (|b_k| / σ_k)²
+    (2 K degrees of freedom). Their sum over its degrees of freedom estimates s².
+
+    Parameters
+    ----------
+    chi2_plus : float
+        ``combine(...)["chi2"]`` of the sense +1 amplitudes.
+    null_snr : sequence of float
+        |b_k| / σ_k of each set's sense -1 fit.
+
+    Returns
+    -------
+    s : float
+        Estimated noise scale (1 when the per-frame model is right).
+    nu : int
+        Its degrees of freedom, 4 K - 2.
+    """
+    z = np.asarray(null_snr, dtype=np.float64)
+    k = z.size
+    nu = 2 * (k - 1) + 2 * k
+    return float(np.sqrt((chi2_plus + np.sum(z ** 2)) / nu)), int(nu)

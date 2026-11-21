@@ -1,7 +1,7 @@
 """Prepare one night's port products as KLIP-TPE generic inputs, and the command that runs it.
 
 usage: python tools/klip_tpe_inputs.py ARCHIVE NIGHT --tag TAG [--sides left right] [--half 120]
-       [--command-archive PATH] [--min-frames 10] [--display show|none]
+       [--command-archive PATH] [--min-frames 10] [--display show|none] [--ref-min-dpa DEG]
        [--psf-half 30] [--product all|clean] [--ref NIGHT ...] [--ann-edges 11 34 67]
        [--n-iter 400 400] [--n-init 60 60] [--n-remeasure 3] [--contrast0 1e-3] [--workers auto]
 
@@ -24,7 +24,10 @@ and a PSF template per partition, and optionally a reference cube (RDI). For eac
   KLIP-TPE normalizes it to unit total flux, so contrasts are flux ratios to the star's flux
   within that box (the frames are peak-scaled, so every frame shares the unit);
 * with ``--ref``: the same side and chop of the given nights' IDL-clean frames, cut the same way
-  and stacked, as the reference library.
+  and stacked, as the reference library, without frames whose angle was averaged across the wrap
+  and without frames within ``--ref-min-dpa`` of any science frame's angle. A sky-fixed companion
+  sits at detector angle φ - q, so in a reference frame whose angle q_r is close to a science
+  frame's q_s it sits where it does in the science frame, and RDI would subtract it.
 
 and ``<ARCHIVE>/<NIGHT>/klip_tpe/run_<TAG>.sh``, the ``klip-tpe generic`` command over all the
 partitions, writing to ``<ARCHIVE>/<NIGHT>/klip_tpe/run_<TAG>/``, with ``run_<TAG>_smoke.sh``, a
@@ -50,6 +53,10 @@ NIGHT : str
     Which binned cube to use.
 --ref : str list, optional
     Nights whose same-side, same-chop IDL-clean frames form the reference library.
+--ref-min-dpa : float, required with ``--ref``
+    Smallest angle difference, degrees, between a reference frame and every science frame (0
+    keeps every reference frame). A companion at separation r moves by r Δq between frames, so
+    one λ/D at the inner edge r_in needs Δq = (λ/D) / r_in (78° at 0.2″, 39° at 0.4″ at 11.1 µm).
 --command-archive : str, default ARCHIVE
     Archive root to write into the command and the manifest, when the archive is mounted
     elsewhere where this runs (the device sandbox sees /mnt/RAID64TB/NOMIC as ~/mnt/NOMIC).
@@ -193,14 +200,16 @@ def main(argv: Sequence[str]) -> int:
     ap.add_argument("--command-archive", default=None)
     ap.add_argument("--min-frames", type=int, default=10)
     ap.add_argument("--display", choices=["show", "none"], default="show")
+    ap.add_argument("--ref-min-dpa", type=float, default=None)
     a = ap.parse_args(argv)
+    if a.ref and a.ref_min_dpa is None:
+        ap.error("--ref needs --ref-min-dpa (degrees; 0 keeps every reference frame)")
     display = "--show" if a.display == "show" else "--no-display"
     night_dir = os.path.join(a.archive, a.night)
     red = os.path.join(night_dir, "reduced_py")
     out = os.path.join(night_dir, "klip_tpe", f"inputs_{a.tag}")
     if os.path.exists(out):
         raise SystemExit(f"{out} exists; choose another --tag")
-    os.makedirs(out)
     tag = "_clean" if a.product == "clean" else ""
     manifest: Dict = {"night": a.night, "tag": a.tag, "product": a.product, "half": a.half,
                       "psf_half": a.psf_half, "ref_nights": a.ref, "min_frames": a.min_frames,
@@ -226,18 +235,6 @@ def main(argv: Sequence[str]) -> int:
                 manifest["skipped"].append({"name": f"{side}_{'AB'[cn - 1]}", "frames": n_src,
                                             "reason": f"fewer than {a.min_frames} frames"})
                 continue
-            rc, used = None, []
-            if a.ref:
-                stack = []
-                for rn in a.ref:
-                    rsrc = os.path.join(a.archive, rn, "reduced_py", f"{rn}_{side}_cube{cn}_align_cen_clean_bin.fits")
-                    if os.path.exists(rsrc):
-                        stack.append(cut_frames(rsrc, a.half))
-                        used.append(rn)
-                if not stack:
-                    print(f"{pre} cube{cn}: no reference frames from {a.ref}; skipped")
-                    continue
-                rc = np.concatenate(stack)
             cube = cut_frames(src, a.half)
             if cube.ndim == 2:
                 cube = cube[None]
@@ -255,10 +252,42 @@ def main(argv: Sequence[str]) -> int:
                       f"{[round(d['angle_deg'], 2) for d in dropped]} averaged across ±180")
             ang = unwrap_degrees(ang_raw)
             unwrapped = bool(np.any(np.abs(ang - ang_raw) > 1e-9))
+            rc, used, ref_info = None, [], []
+            if a.ref:
+                stack = []
+                for rn in a.ref:
+                    rpre = os.path.join(a.archive, rn, "reduced_py", f"{rn}_{side}")
+                    rsrc, rasrc = f"{rpre}_cube{cn}_align_cen_clean_bin.fits", f"{rpre}_angles{cn}_clean_bin.fits"
+                    if not (os.path.exists(rsrc) and os.path.exists(rasrc)):
+                        continue
+                    rframes = cut_frames(rsrc, a.half)
+                    if rframes.ndim == 2:
+                        rframes = rframes[None]
+                    rang = np.asarray(fits.getdata(rasrc), dtype=np.float64).ravel()
+                    if len(rang) != rframes.shape[0] or not np.all(np.isfinite(rang)):
+                        raise SystemExit(f"{rasrc}: {len(rang)} angles for {rframes.shape[0]} frames, or angles not finite")
+                    ok = np.ones(rang.size, dtype=bool)
+                    rbad = wrap_outliers(rang)
+                    ok[rbad] = False
+                    dpa = np.abs((rang[:, None] - ang_raw[None, :] + 180.0) % 360.0 - 180.0).min(axis=1)
+                    near = ok & (dpa < a.ref_min_dpa)
+                    ok &= dpa >= a.ref_min_dpa
+                    ref_info.append({"night": rn, "frames": int(rang.size), "wrap_averaged": int(rbad.size),
+                                     "within_min_dpa": int(near.sum()), "used": int(ok.sum()),
+                                     "sources": {os.path.basename(x): sha256_of(x) for x in (rsrc, rasrc)}})
+                    if ok.any():
+                        stack.append(rframes[ok])
+                        used.append(rn)
+                if not stack:
+                    print(f"{pre} cube{cn}: no reference frames from {a.ref} at least {a.ref_min_dpa} deg from the "
+                          f"science angles; skipped")
+                    continue
+                rc = np.concatenate(stack)
             psf = cut_frames(psrc, a.psf_half)
             c_out = os.path.join(out, f"{pre}_cube{cn}_{a.product}_c{2 * a.half}.fits")
             a_out = os.path.join(out, f"{pre}_angles{cn}_{a.product}.fits")
             p_out = os.path.join(out, f"{pre}_cube{cn}_psf{2 * a.psf_half}.fits")
+            os.makedirs(out, exist_ok=True)              # made with the first partition written
             fits.PrimaryHDU(cube).writeto(c_out)
             fits.PrimaryHDU(ang).writeto(a_out)
             fits.PrimaryHDU(psf).writeto(p_out)
@@ -271,7 +300,8 @@ def main(argv: Sequence[str]) -> int:
             if rc is not None:
                 r_out = os.path.join(out, f"{pre}_cube{cn}_ref_c{2 * a.half}.fits")
                 fits.PrimaryHDU(rc).writeto(r_out)
-                part.update(ref=r_out, ref_frames=int(rc.shape[0]), ref_nights_used=used)
+                part.update(ref=r_out, ref_frames=int(rc.shape[0]), ref_nights_used=used, ref_min_dpa=a.ref_min_dpa,
+                            ref_detail=ref_info)
                 refs.append(r_out)
             manifest["partitions"].append(part)
             cubes.append(c_out); angles.append(a_out); psfs.append(p_out); names.append(part["name"])
