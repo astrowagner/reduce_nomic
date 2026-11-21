@@ -3,8 +3,8 @@
 #
 # usage: ARCHIVE=/mnt/RAID64TB/NOMIC bash analysis/procyon4_2026-11/supersede_set.sh TAG
 #
-# Moves Procyon_20211220/klip_tpe/inputs_TAG/, run_TAG.sh, run_TAG_smoke.sh, run_TAG/ and
-# smoke_TAG/ (those that exist) into _to_delete/klip_tpe_superseded_2026-11-21_procyon4/, the
+# Moves Procyon_20211220/klip_tpe/inputs_TAG/, run_TAG.sh, run_TAG_smoke.sh, resume_TAG.sh,
+# run_TAG/ and smoke_TAG/ (those that exist) into _to_delete/klip_tpe_superseded_2026-11-21_procyon4/, the
 # folder of the earlier adi10k and adi3ann sets. Nothing is deleted; a path already moved is
 # reported and skipped, an existing destination stops the script, and nothing is moved while a
 # run's heartbeat is less than 10 minutes old.
@@ -43,7 +43,8 @@ for run in "run_${TAG:?}" "smoke_${TAG:?}"; do
 done
 
 mkdir -p "${ARCHIVE:?}/_to_delete/${FOLDER:?}/${KT_DIR:?}"
-for name in "inputs_${TAG:?}" "run_${TAG:?}.sh" "run_${TAG:?}_smoke.sh" "run_${TAG:?}" "smoke_${TAG:?}"; do
+for name in "inputs_${TAG:?}" "run_${TAG:?}.sh" "run_${TAG:?}_smoke.sh" "resume_${TAG:?}.sh" "run_${TAG:?}" \
+            "smoke_${TAG:?}"; do
     src="${ARCHIVE:?}/${KT_DIR:?}/${name:?}"
     dst="${ARCHIVE:?}/_to_delete/${FOLDER:?}/${KT_DIR:?}/${name:?}"
     if [ ! -e "${src:?}" ]; then
