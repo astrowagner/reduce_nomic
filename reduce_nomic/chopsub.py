@@ -224,10 +224,12 @@ def mean_skies(frames: np.ndarray, chops: Sequence[str]) -> Dict[str, np.ndarray
     -------
     skies : dict
         ``CHOP_A`` and ``CHOP_B``: per-pixel IDL median (upper middle value for an even count,
-        NaN ignored) over that chop's frames, as IDL ``median(cube, dim=3)``.
+        NaN ignored) over that chop's frames, as IDL ``median(cube, dim=3)``. A chop position
+        with no frames in this round is left out (``subtract_sky`` then uses the nearest round
+        that has it).
     """
     ch = np.asarray(chops)
-    return {c: idl.median(frames[ch == c], axis=0) for c in ("CHOP_A", "CHOP_B")}
+    return {c: idl.median(frames[ch == c], axis=0) for c in ("CHOP_A", "CHOP_B") if np.any(ch == c)}
 
 
 def subtract_sky(frame: np.ndarray, chop: str, inum: float, skies: Sequence[Dict], flip: bool) -> np.ndarray:
@@ -250,9 +252,14 @@ def subtract_sky(frame: np.ndarray, chop: str, inum: float, skies: Sequence[Dict
     Returns
     -------
     out : ndarray, shape (512, 512)
-        The frame minus the selected sky, whose NaNs count as 0.
+        The frame minus the selected sky, whose NaNs count as 0: from the sky round nearest in
+        frame number among those with the needed chop position. When no round has it, the frame
+        is returned unchanged (a port decision; in IDL an empty chop position stops the sky step).
     """
     use = chop if flip else ("CHOP_B" if chop == "CHOP_A" else "CHOP_A")
-    k = int(np.argmin([abs(inum - s["avginum"]) for s in skies]))
+    have = [i for i, s in enumerate(skies) if use in s]
+    if not have:
+        return frame
+    k = have[int(np.argmin([abs(inum - skies[i]["avginum"]) for i in have]))]
     sky = np.nan_to_num(skies[k][use], nan=0.0)
     return frame - sky

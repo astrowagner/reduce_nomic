@@ -339,6 +339,10 @@ def gauss_center(med: np.ndarray, half: int = 20) -> Tuple[float, float]:
     return float(p[1]), float(p[2])
 
 
+class CenterFailed(RuntimeError):
+    """Neither center estimator found the star in a chunk's median frame."""
+
+
 def center_cube(cube: np.ndarray, st: Dict, rng: np.random.Generator, n_draw: int = 100,
                 diag: Optional[Dict] = None) -> Tuple[np.ndarray, Tuple[float, float]]:
     """Center an aligned cube on its median star (IDL center stage, or a Gaussian fit to the core).
@@ -358,7 +362,8 @@ def center_cube(cube: np.ndarray, st: Dict, rng: np.random.Generator, n_draw: in
         Number of frames the ``idl`` method draws; 0 uses every frame.
     diag : dict, optional
         Filled with ``center_idl`` and ``center_gauss``: both estimators' (x, y) on the median
-        used, in pixels (None where one fails), for the run's summary.
+        used, in pixels (None where one fails), and ``center_used``: the estimator whose center
+        was applied (``center_method``, or the other one when it failed), for the run's summary.
 
     Returns
     -------
@@ -373,8 +378,10 @@ def center_cube(cube: np.ndarray, st: Dict, rng: np.random.Generator, n_draw: in
     ------
     ValueError
         For an unknown ``center_method``.
-    RuntimeError
-        When the chosen estimator fails.
+    CenterFailed
+        When both estimators fail. When only the chosen one fails, the other one's center is
+        used (a port decision: IDL has only its centroid, and a failed Gaussian fit on one chunk
+        should not stop a night).
     """
     r = int(st["radius"])
     m = cube.shape[0]
@@ -396,11 +403,13 @@ def center_cube(cube: np.ndarray, st: Dict, rng: np.random.Generator, n_draw: in
             est[name] = (x + o, y + o)
         except RuntimeError:
             est[name] = None
+    used = method if est[method] is not None else ("idl" if method == "gauss" else "gauss")
     if diag is not None:
         diag["center_idl"], diag["center_gauss"] = est["idl"], est["gauss"]
-    if est[method] is None:
-        raise RuntimeError(f"the {method} estimator failed in the center stage")
-    xc, yc = est[method]
+        diag["center_used"] = used if est[used] is not None else None
+    if est[used] is None:
+        raise CenterFailed("both center estimators failed in the center stage")
+    xc, yc = est[used]
     dx, dy = float(r) - xc - 0.5, float(r) - yc - 0.5
     out = cube if cube.dtype == np.float32 else np.empty(cube.shape, dtype=np.float32)
     for i in range(m):

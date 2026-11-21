@@ -103,13 +103,21 @@ def replace_interior_nans(frame: np.ndarray) -> np.ndarray:
         all-NaN column, below the last leading all-NaN row (row 0 when none), from the last
         column holding a finite value to the right, and from the last row holding one upward;
         those stay NaN, as in IDL.
+
+    Notes
+    -----
+    When column 0 already holds a finite pixel (the star near the detector's right edge puts
+    the detector against the frame's left edge), IDL's leading-column index becomes -1 and its
+    replace step stops with a subscript error. The port then protects no leading columns and
+    goes on (a port decision; the pipeline counts such frames in ``frames_finite_column0``).
+    An all-NaN frame is returned unchanged.
     """
     good = np.isfinite(frame).astype(np.float64)
     col_any = good.sum(axis=0) > 0
     row_any = good.sum(axis=1) > 0
-    if col_any[0]:
-        raise ValueError("column 0 holds a finite pixel; the IDL replace step fails here")
-    leftmost = int(np.argmax(col_any)) - 1
+    if not col_any.any():
+        return np.array(frame, copy=True)
+    leftmost = -1 if col_any[0] else int(np.argmax(col_any)) - 1
     bottommost = int(np.argmax(row_any)) - 1 if not row_any[0] else 0
     rightmost = int(np.nonzero(col_any)[0][-1])
     topmost = int(np.nonzero(row_any)[0][-1])

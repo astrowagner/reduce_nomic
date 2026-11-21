@@ -295,8 +295,9 @@ def _chunk_task(args) -> Dict:
     res : dict
         ``binned``, ``angles``, ``exptimes`` (binned), ``coadds`` (kept frames, unbinned, as IDL
         saves them), and diagnostics: frame counts, bad frames, alignment shifts, the center
-        used and both estimators' centers (``center_idl``, ``center_gauss``; see
-        ``geometry.center_cube``), the pre-clean's ``corrs``, ``noises`` and ``peaks``, and for
+        used and both estimators' centers (``center_idl``, ``center_gauss``, ``center_used``; see
+        ``geometry.center_cube``), ``dropped`` (None, or why the chunk's frames were dropped: both
+        center estimators failed), the pre-clean's ``corrs``, ``noises`` and ``peaks``, and for
         the display ``thumb``, the median of the centered frames' central 200x200 pixels.
 
     Notes
@@ -321,11 +322,18 @@ def _chunk_task(args) -> Dict:
     aligned, shifts = geometry.align_cube(cube, st)
     rng = np.random.default_rng([int(st["seed"]), c, cn])
     diag: Dict = {}
-    centered, center = geometry.center_cube(aligned, st, rng, diag=diag)
+    try:
+        centered, center = geometry.center_cube(aligned, st, rng, diag=diag)
+    except geometry.CenterFailed as err:        # no star in this chunk's median: drop its frames
+        return {"chunk": c, "cn": cn, "n_in": int(aligned.shape[0]), "bad": list(range(aligned.shape[0])),
+                "shifts": shifts.tolist(), "center": None, "center_idl": None, "center_gauss": None,
+                "center_used": None, "dropped": str(err), "corrs": [], "noises": [], "peaks": [],
+                "thumb": None, "binned": None, "angles": [], "exptimes": [], "coadds": []}
     sel = select.measure_and_select(centered, ang, st, cn, pre=True)
     res = {"chunk": c, "cn": cn, "n_in": int(centered.shape[0]), "bad": sel.bad.tolist(),
            "shifts": shifts.tolist(), "center": list(center), "center_idl": diag.get("center_idl"),
-           "center_gauss": diag.get("center_gauss"), "corrs": sel.corrs.tolist(),
+           "center_gauss": diag.get("center_gauss"), "center_used": diag.get("center_used"),
+           "dropped": None, "corrs": sel.corrs.tolist(),
            "noises": sel.noises.tolist(), "peaks": sel.peaks.tolist(), "thumb": None}
     if st.get("display") and centered.shape[0]:
         r = int(st["radius"])
@@ -707,6 +715,27 @@ def write_frame_tags(stem: str, angles, exptimes, corrs, noises, coronoise, peak
                               (f"{v:.6g}" if isinstance(v, (float, np.floating)) else str(v)) for v in row) + "\n")
 
 
+def _median_or_nan(cube: np.ndarray, even: bool = False) -> np.ndarray:
+    """Per-pixel IDL median of a cube, or an all-NaN frame when the cube has no frames.
+
+    Parameters
+    ----------
+    cube : ndarray, shape (m, ny, nx)
+        Frames; m may be 0.
+    even : bool, default False
+        Passed to ``idl.median``.
+
+    Returns
+    -------
+    med : ndarray, shape (ny, nx)
+        The median, or NaN everywhere for an empty cube (so a night whose clean keeps no frame
+        still writes every product).
+    """
+    if cube.shape[0] == 0:
+        return np.full(cube.shape[1:], np.nan, dtype=np.float32)
+    return idl.median(cube, axis=0, even=even) if even else idl.median(cube, axis=0)
+
+
 def planned_outputs(pre: str) -> List[str]:
     """List the product file names one run writes.
 
@@ -837,7 +866,11 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
         nk = rounds[k]["n"]
         mmk = np.memmap(path, dtype=np.float32, mode="r", shape=(max(nk, 1), 512, 512))
         sk = chopsub.mean_skies(np.asarray(mmk[:nk]), [s.chop for s in rounds[k]["segments"]])
-        sk["avginum"] = float(np.mean([float(s.inum) for s in rounds[k]["segments"]]))
+        missing = [c for c in ("CHOP_A", "CHOP_B") if c not in sk]
+        if missing:
+            log(f"{side}_round{k}: no {' or '.join(missing)} frames in this sky round; frames that "
+                "need that sky take it from the nearest round that has it (none: no sky subtracted)")
+        sk["avginum"] = float(np.mean([float(s.inum) for s in rounds[k]["segments"]])) if nk else float("nan")
         skies.insert(0, sk)
     sci_path = chopsub_round(rounds[0], badmap, st, work, f"{side}_round0", workers,
                              skies if st["skysub"] else None)
@@ -903,6 +936,15 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
     per_task = max(sizes, default=0) * ((2 * int(st["radius"])) ** 2 + 512 * 512) * 4 + CHUNK_TASK_FIXED
     results = _run(_chunk_task, tasks, _mem_workers(workers, per_task, label), label, show, disp,
                    sizes=sizes, unit="frames")
+    cmeth = str(st.get("center_method", "gauss"))
+    fell = [(r["chunk"], r["cn"]) for r in results if r.get("center_used") not in (None, cmeth)]
+    gone = [(r["chunk"], r["cn"], r["n_in"]) for r in results if r.get("dropped")]
+    if fell:
+        log(f"center: the {cmeth} estimator failed on {len(fell)} chunk/chop pairs, which used the other "
+            f"estimator's center: {fell}")
+    if gone:
+        log(f"center: both estimators failed on {len(gone)} chunk/chop pairs; their "
+            f"{sum(g[2] for g in gone)} frames were dropped: {[(c, cn) for c, cn, _ in gone]}")
     write_fits(os.path.join(out_dir, f"{pre}_badmap.fits"), badmap)
     summary = {"night": night, "night_old": st.get("night_old") or night, "side": side,
                "settings_source": settings.source, "n_raw": len(sci),
@@ -918,7 +960,8 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
         ang = np.concatenate([r["angles"] for r in parts]) if parts else np.zeros(0)
         exp = np.concatenate([r["exptimes"] for r in parts]) if parts else np.zeros(0)
         coa = np.concatenate([r["coadds"] for r in parts]) if parts else np.zeros(0)
-        write_fits(os.path.join(out_dir, f"{pre}_cube{cn}_align_cen_median_PSF.fits"), idl.median(big, axis=0, even=True))
+        write_fits(os.path.join(out_dir, f"{pre}_cube{cn}_align_cen_median_PSF.fits"), _median_or_nan(big, even=True))
+        n_col0 = int(sum(bool(np.isfinite(f[:, 0]).any()) for f in big))
         rep = np.stack([binning.replace_interior_nans(f) for f in big]).astype(np.float32) if big.shape[0] else big
         sel = select.measure_and_select(rep, ang, st, cn, pre=False)
         every = select.peak_scaled(rep) if st["peak_scale"] else rep
@@ -939,7 +982,7 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
         coa_f = np.delete(coa, sel.bad[sel.bad < coa.size])
         write_fits(os.path.join(out_dir, f"{pre}_cube{cn}_align_cen_clean_bin.fits"), fin,
                    dict(head, FRAMESEL="IDL clean thresholds"))
-        write_fits(os.path.join(out_dir, f"{pre}_cube{cn}_align_cen_clean_median_PSF.fits"), idl.median(fin, axis=0))
+        write_fits(os.path.join(out_dir, f"{pre}_cube{cn}_align_cen_clean_median_PSF.fits"), _median_or_nan(fin))
         hdu = fits.PrimaryHDU(np.asarray(ang_f, dtype=np.float64))
         hdu.writeto(os.path.join(out_dir, f"{pre}_angles{cn}_clean_bin.fits"), overwrite=False)
         with open(os.path.join(out_dir, f"{pre}_angles{cn}_clean_bin.csv"), "x") as fh:
@@ -956,7 +999,11 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
                                 "angle_range": [float(np.min(ang_f)), float(np.max(ang_f))] if ang_f.size else None,
                                 "centers": [r["center"] for r in res],
                                 "centers_idl": [r.get("center_idl") for r in res],
-                                "centers_gauss": [r.get("center_gauss") for r in res]}
+                                "centers_gauss": [r.get("center_gauss") for r in res],
+                                "center_fallbacks": int(sum(1 for r in res if r.get("center_used") not in (None, st.get("center_method", "gauss")))),
+                                "chunks_dropped": [r["chunk"] for r in res if r.get("dropped")],
+                                "frames_dropped": int(sum(r["n_in"] for r in res if r.get("dropped"))),
+                                "frames_finite_column0": n_col0}
     summary["elapsed_s"] = round(time.time() - t0, 1)
     with open(os.path.join(out_dir, f"{pre}_summary.json"), "x") as fh:
         json.dump(summary, fh, indent=1)

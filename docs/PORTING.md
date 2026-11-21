@@ -78,6 +78,12 @@ On 1,600 sampled Procyon_13 frames (40 blocks of 20 over the night, both apertur
 
 **Split positions** (`split_median_frames`, 20 by default). The IDL split stage finds the two chop positions of a chunk in its first two frames and checks their order on the first chop-A frame. When a chunk starts with bad frames, the cut is wrong for the whole chunk. The IDL products' broken bins just after Procyon_13's SX excursion (the star 30 px off center or missing) fit this failure, though that was not traced to the chunk boundary. The port finds them in the NaN-ignoring median of up to 20 frames of the same chop from those frames on (`pipeline._start_median`). `--set split_median_frames=1` reproduces the IDL single frames.
 
+**Steps where IDL stops** (port decisions after the November 2026 batch, which hit each of them).
+- **Center stage:** the port runs both center estimators on every chunk's median. When the chosen one (`center_method`, `gauss` by default) fails, the other one's center is used, and when both fail the chunk's frames are dropped (`geometry.CenterFailed`). The run log and the summary (`center_fallbacks`, `chunks_dropped`, `frames_dropped`) record both. Vega 2022-05-20 left and 2022-05-21 left stopped here.
+- **NaN replacement:** when column 0 of a binned frame already holds a finite pixel (the star within the frame's half-width of the detector's right edge), IDL's leading-column index becomes -1 and its replace step stops. The port protects no leading columns and goes on, counting the frames in `frames_finite_column0`. Vega 2022-05-20 right stopped here.
+- **Sky rounds with an empty chop position:** the mean sky of that position is left out, and frames that need it take it from the nearest sky round that has it (no sky is subtracted when none has). The run log says so.
+- **Empty cubes:** a cube whose clean keeps no frame still writes every product, with an all-NaN median PSF.
+
 **Pauses.** No step pauses for a key (`hak`). `checksky` logs a warning instead of pausing.
 
 **Overwrites.** Outputs go to `reduced_py/`, and existing files are never overwritten. IDL deletes and rewrites `chop/` and `reduced/`.
