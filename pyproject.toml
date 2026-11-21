@@ -19,3 +19,6 @@ reduce-nomic = "reduce_nomic.cli:main_entry"
 
 [tool.setuptools]
 packages = ["reduce_nomic"]
+
+[tool.setuptools.package-data]
+reduce_nomic = ["data/*.txt", "data/*.csv"]

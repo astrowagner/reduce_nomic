@@ -1,0 +1,155 @@
+{
+  "name": "vega_idl",
+  "title": "Vega: 5σ Limits on Stellar Companions at N′ from the IDL NOMIC Reductions",
+  "star": {
+    "name": "Vega",
+    "parallax_mas": 130.23,
+    "parallax_err_mas": 0.36,
+    "parallax_ref": "van Leeuwen (2007), Hipparcos new reduction; Vega is too bright for Gaia",
+    "mag": 0.0,
+    "mag_err": 0.05,
+    "mag_note": "Vega defines zero magnitude; the uncertainty allows for its mid-infrared excess"
+  },
+  "band": {
+    "name": "N′",
+    "range_um": [
+      9.8,
+      12.4
+    ],
+    "lambda_um": 11.1,
+    "aperture_m": 8.4,
+    "proxy": "W3",
+    "note": "contrastcurve_nomic.pro models the band as 9.8-12.4 um; the raw headers do not record the filter (NOMICLAM = -999)"
+  },
+  "sequence": {
+    "first": "F0V",
+    "last": "M7V"
+  },
+  "companions": {
+    "shade": [
+      "K0V",
+      "K7V"
+    ],
+    "shade_label": "K0V–K7V",
+    "lines": [
+      "M0V",
+      "M2V",
+      "M4V",
+      "M5V",
+      "M6V"
+    ]
+  },
+  "marks_au": [
+    0.5
+  ],
+  "min_pa_worst": 10,
+  "curves": [
+    {
+      "id": "20210227",
+      "night": "Vega_20210227",
+      "date": "2021-02-27",
+      "side": "left",
+      "path": "Vega_20210227/IDL/contrast/Vega_contrast_output.sav",
+      "folder": "contrast",
+      "method": "ADI (script setting)",
+      "cap": 0.01,
+      "plot": true
+    },
+    {
+      "id": "20210227_derot",
+      "night": "Vega_20210227",
+      "date": "2021-02-27",
+      "side": "left",
+      "path": "Vega_20210227/IDL/contrast-derot/Vega_contrast_output.sav",
+      "folder": "contrast-derot",
+      "method": "derotation only",
+      "cap": 0.01,
+      "plot": false
+    },
+    {
+      "id": "20220515_klip",
+      "night": "Vega_20220515",
+      "date": "2022-05-15",
+      "side": "left",
+      "path": "Vega_20220515/IDL/contrast-klip/Vega_2_contrast_output.sav",
+      "folder": "contrast-klip",
+      "method": "KLIP",
+      "cap": 0.01,
+      "plot": true
+    },
+    {
+      "id": "20220515_klip_noradfilt",
+      "night": "Vega_20220515",
+      "date": "2022-05-15",
+      "side": "left",
+      "path": "Vega_20220515/IDL/contrast-klip-noradfilt/Vega_2_contrast_output.sav",
+      "folder": "contrast-klip-noradfilt",
+      "method": "KLIP, no radial filter",
+      "cap": 0.01,
+      "plot": false
+    },
+    {
+      "id": "20220515_adi",
+      "night": "Vega_20220515",
+      "date": "2022-05-15",
+      "side": "left",
+      "path": "Vega_20220515/IDL/contrast-adi/Vega_2_contrast_output.sav",
+      "folder": "contrast-adi",
+      "method": "ADI",
+      "cap": 0.01,
+      "plot": true
+    },
+    {
+      "id": "20220515_derot",
+      "night": "Vega_20220515",
+      "date": "2022-05-15",
+      "side": "left",
+      "path": "Vega_20220515/IDL/contrast-derot/Vega_2_contrast_output.sav",
+      "folder": "contrast-derot",
+      "method": "derotation only",
+      "cap": 0.01,
+      "plot": false
+    },
+    {
+      "id": "20220520",
+      "night": "Vega_20220520",
+      "date": "2022-05-20",
+      "side": "both",
+      "path": "Vega_20220520/IDL/contrast/Vega_3_contrast_output.sav",
+      "folder": "contrast",
+      "method": "KLIP (script setting)",
+      "cap": 0.1,
+      "plot": true
+    },
+    {
+      "id": "20220521",
+      "night": "Vega_20220521",
+      "date": "2022-05-21",
+      "side": "both",
+      "path": "Vega_20220521/IDL/contrast/Vega_4_contrast_output.sav",
+      "folder": "contrast",
+      "method": "KLIP (script setting)",
+      "cap": 0.01,
+      "plot": true
+    },
+    {
+      "id": "20220612",
+      "night": "Vega_20220612",
+      "date": "2022-06-12",
+      "side": "both",
+      "path": "Vega_20220612/IDL/contrast/Vega_6_contrast_output.sav",
+      "folder": "contrast",
+      "method": "ADI inside 0.65″, KLIP outside (script setting)",
+      "cap": 0.01,
+      "plot": true,
+      "short": "ADI/KLIP"
+    }
+  ],
+  "missing": [
+    {
+      "night": "Vega_20220522",
+      "date": "2022-05-22",
+      "note": "no IDL limits: Vega_5_contrast_curve.pdf is a snapshot of trial 4 of 200 (the Vega_6 PDF, made the same way, does not match its finished .sav), and there is no .sav"
+    }
+  ]
+}

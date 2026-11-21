@@ -44,6 +44,16 @@ python3 tools/batch_reduce.py PLAN.csv ARCHIVE --work SCRATCH --workers 64 [--dr
 - **Plan:** one row per run, in order: `id`, `night`, `side`, `out` (output folder in the night folder, default `reduced_py`), `set` (JSON object of settings), `note`.
 - **Driver:** runs each row as its own `reduce_nomic.cli` process, with its output in `<out>/<night>_<side>_run_<UTC>.log` and a row in `<plan>_log.csv`. A row whose summary exists is done and skipped, so a rerun resumes; a row with only some products is reported and left alone. No run starts with less than `--min-free-gb` (1500) free. All runs share the work folder `SCRATCH`, where each round recreates its memmaps, so the scratch stays at the size of the largest run.
 
+## Companion limits
+
+```
+python3 tools/companion_limits.py config/companion_limits/vega_idl.json --archive ARCHIVE --out DIR
+```
+
+- **What it does:** reads a target's contrast curves (now the IDL `<night>_contrast_output.sav` files), summarizes each over position angle (median and worst), and turns the limits into the earliest spectral type and highest mass of a main-sequence companion that could be missed, against angular and projected separation. Tables, a summary and a figure go to `DIR`.
+- **Magnitudes:** N′ is matched to WISE W3: M_W3 = M_Ks − (Ks − W3), with M_Ks and masses from Mamajek's dwarf sequence (`reduce_nomic/data/EEM_dwarf_UBVIJHK_colors_Teff.txt`, version 2022.04.16) and Ks − W3 from that table through K5V and from the Cifuentes et al. (2020) catalog from K7V (`reduce_nomic/data/dwarf_ks_w3_cifuentes2020.csv`, remade with `tools/derive_ks_w3_colors.py` from the catalog's `cif20.Mother.v01.csv`).
+- **Spec:** one JSON file per target gives the parallax, the star's magnitude in the band, the curves (paths relative to `ARCHIVE`) and what to mark; `config/companion_limits/vega_idl.json` is the example.
+
 ## Stages
 
 | Module | IDL step | What it does |
