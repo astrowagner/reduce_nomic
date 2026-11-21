@@ -10,8 +10,23 @@ from astropy.io import fits
 TOOL = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools", "klip_tpe_inputs.py")
 
 
-def _night(root, night, n):
-    """Write one side's port products for a night: a centered star in 300 px frames."""
+def _night(root, night, n, n_by_cube=None, angles=None):
+    """Write one side's port products for a night: a centered star in 300 px frames.
+
+    Parameters
+    ----------
+    root : str
+        Archive root.
+    night : str
+        Night folder name.
+    n : int
+        Frames per cube.
+    n_by_cube : dict, optional
+        Frames per cube number, overriding ``n`` for the cubes it lists.
+    angles : ndarray, optional
+        Angles for every cube (degrees), sliced to each cube's frame count; default a linear
+        ramp from -10 to 10.
+    """
     red = os.path.join(root, night, "reduced_py")
     os.makedirs(red)
     yy, xx = np.mgrid[0:300, 0:300]
@@ -20,9 +35,11 @@ def _night(root, night, n):
     h["XCEN"], h["YCEN"] = 149.5, 149.5
     for cn in (1, 2):
         pre = f"{night}_left"
+        k = (n_by_cube or {}).get(cn, n)
+        ang = np.linspace(-10, 10, k) if angles is None else np.asarray(angles[:k], dtype=float)
         for tag in ("", "_clean"):
-            fits.PrimaryHDU(np.repeat(star[None], n, axis=0), h).writeto(os.path.join(red, f"{pre}_cube{cn}_align_cen{tag}_bin.fits"))
-            fits.PrimaryHDU(np.linspace(-10, 10, n)).writeto(os.path.join(red, f"{pre}_angles{cn}{tag}_bin.fits"))
+            fits.PrimaryHDU(np.repeat(star[None], k, axis=0), h).writeto(os.path.join(red, f"{pre}_cube{cn}_align_cen{tag}_bin.fits"))
+            fits.PrimaryHDU(ang).writeto(os.path.join(red, f"{pre}_angles{cn}{tag}_bin.fits"))
         fits.PrimaryHDU(star, h).writeto(os.path.join(red, f"{pre}_cube{cn}_align_cen_clean_median_PSF.fits"))
 
 
@@ -58,3 +75,32 @@ def test_inputs_centered_with_references(tmp_path):
     sh2 = open(os.path.join(root, "Fake_20220101", "klip_tpe", "run_adi.sh")).read()
     assert "/mnt/RAID64TB/NOMIC/Fake_20220101/klip_tpe/inputs_adi/Fake_20220101_left_cube1_all_c80.fits" in sh2
     assert root not in sh2
+    assert "--show" in sh2 and "--no-display" not in sh2                 # the live window by default
+    r3 = subprocess.run([sys.executable, TOOL, root, "Fake_20220101", "--tag", "quiet", "--half", "40", "--psf-half", "10",
+                         "--display", "none"], capture_output=True, text=True)
+    assert r3.returncode == 0, r3.stderr
+    sh3 = open(os.path.join(root, "Fake_20220101", "klip_tpe", "run_quiet.sh")).read()
+    smoke3 = open(os.path.join(root, "Fake_20220101", "klip_tpe", "run_quiet_smoke.sh")).read()
+    assert "--no-display" in sh3 and "--show" not in sh3 and "--no-display" in smoke3
+
+
+def test_transit_angles_unwrapped_and_short_cube_skipped(tmp_path):
+    """Angles crossing ±180° are written without the jump; a cube below --min-frames is left out."""
+    root = str(tmp_path)
+    ang = np.array([170.0, 175.0, 179.5, -178.0, -172.0, -165.0, -160.0, -150.0, -140.0, -130.0, -120.0, -110.0])
+    _night(root, "Fake_20220521", 12, n_by_cube={2: 1}, angles=ang)
+    r = subprocess.run([sys.executable, TOOL, root, "Fake_20220521", "--tag", "adi", "--half", "40", "--psf-half", "10"],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    d = os.path.join(root, "Fake_20220521", "klip_tpe", "inputs_adi")
+    out = fits.getdata(os.path.join(d, "Fake_20220521_left_angles1_all.fits"))
+    assert np.allclose(out, np.where(ang < 0, ang + 360.0, ang))        # 170 ... 179.5, 182 ... 250
+    assert np.all(np.diff(out) > 0)
+    m = json.load(open(os.path.join(d, "manifest.json")))
+    assert [p["name"] for p in m["partitions"]] == ["left_A"]
+    p = m["partitions"][0]
+    assert p["unwrapped"] and abs(p["rotation_deg"] - 80.0) < 1e-9 and p["angle_first"] == 170.0
+    assert m["skipped"] == [{"name": "left_B", "frames": 1, "reason": "fewer than 10 frames"}]
+    assert not os.path.exists(os.path.join(d, "Fake_20220521_left_cube2_all_c80.fits"))
+    sh = open(os.path.join(root, "Fake_20220521", "klip_tpe", "run_adi.sh")).read()
+    assert "--names left_A \\" in sh and "cube2" not in sh

@@ -1,19 +1,23 @@
 """Prepare one night's port products as KLIP-TPE generic inputs, and the command that runs it.
 
 usage: python tools/klip_tpe_inputs.py ARCHIVE NIGHT --tag TAG [--sides left right] [--half 120]
-       [--command-archive PATH]
+       [--command-archive PATH] [--min-frames 10] [--display show|none]
        [--psf-half 30] [--product all|clean] [--ref NIGHT ...] [--ann-edges 11 34 67]
        [--n-iter 400 400] [--n-init 60 60] [--n-remeasure 3] [--contrast0 1e-3] [--workers auto]
 
 KLIP-TPE's generic adapter (``klip-tpe generic``) takes one registered cube, its derotation angles
 and a PSF template per partition, and optionally a reference cube (RDI). For each side and chop of
-``NIGHT`` this writes, under ``<ARCHIVE>/<NIGHT>/klip_tpe/inputs_<TAG>/``:
+``NIGHT`` with at least ``--min-frames`` frames this writes, under
+``<ARCHIVE>/<NIGHT>/klip_tpe/inputs_<TAG>/``:
 
 * the binned frames (``--product all``: every binned frame, ``<pre>_cube<n>_align_cen_bin.fits``,
   for KLIP-TPE's own frame selection; ``clean``: the IDL clean selection) cut to (2 half)² pixels
   with the star at the array center, so that KLIP-TPE's default center applies;
 * their parallactic angles (KLIP-TPE derotates counterclockwise by angle + truenorth, as the IDL
-  predecessor does with ``rot(frame, -angle - truenorth)``);
+  predecessor does with ``rot(frame, -angle - truenorth)``), unwrapped in time order so that a
+  night whose angles cross ±180° (a transit north of the zenith) has no jump: KLIP-TPE's reference
+  selection uses the plain difference |angle_i - angle_j|, and a derotation by angle + 360° is the
+  same rotation;
 * the median PSF of the IDL-clean frames cut to (2 psf_half)² pixels as the injection template:
   KLIP-TPE normalizes it to unit total flux, so contrasts are flux ratios to the star's flux
   within that box (the frames are peak-scaled, so every frame shares the unit);
@@ -47,6 +51,12 @@ NIGHT : str
 --command-archive : str, default ARCHIVE
     Archive root to write into the command and the manifest, when the archive is mounted
     elsewhere where this runs (the device sandbox sees /mnt/RAID64TB/NOMIC as ~/mnt/NOMIC).
+--min-frames : int, default 10
+    Fewest frames a partition needs; a side and chop with fewer is left out, and the manifest
+    lists it under ``skipped`` with its frame count.
+--display : {"show", "none"}, default "show"
+    ``show`` writes ``--show`` into both scripts (KLIP-TPE's live window), ``none`` writes
+    ``--no-display``.
 --ann-edges, --n-iter, --n-init, --n-remeasure, --contrast0, --workers
     Written into the command (KLIP-TPE options of the same names; annulus edges in pixels).
 
@@ -54,9 +64,10 @@ Returns
 -------
 inputs_<TAG>/ : files
     ``<pre>_cube<n>_<product>_c<2 half>.fits`` (float32, shape (n_frames, 2 half, 2 half)),
-    ``<pre>_angles<n>_<product>.fits`` (degrees), ``<pre>_cube<n>_psf<2 psf_half>.fits``, with
-    ``--ref`` ``<pre>_cube<n>_ref_c<2 half>.fits``, and ``manifest.json`` (sources with their
-    SHA-256, cuts, frame counts, angle ranges).
+    ``<pre>_angles<n>_<product>.fits`` (degrees, unwrapped), ``<pre>_cube<n>_psf<2 psf_half>.fits``,
+    with ``--ref`` ``<pre>_cube<n>_ref_c<2 half>.fits``, and ``manifest.json`` (sources with their
+    SHA-256, cuts, frame counts, first and last angle, rotation span, whether the angles were
+    unwrapped, and the skipped partitions).
 run_<TAG>.sh, run_<TAG>_smoke.sh : file
     The run and its smoke test, for Kevin to check and run.
 """
@@ -126,6 +137,25 @@ def cut_frames(path: str, half: int) -> np.ndarray:
         return np.array(d[..., y0:y0 + 2 * half, x0:x0 + 2 * half], dtype=np.float32)
 
 
+def unwrap_degrees(angles: np.ndarray) -> np.ndarray:
+    """Remove ±360° jumps from a time-ordered sequence of angles.
+
+    Parameters
+    ----------
+    angles : ndarray, shape (n,)
+        Parallactic angles in time order, degrees.
+
+    Returns
+    -------
+    unwrapped : ndarray, float64, shape (n,)
+        The same angles with multiples of 360° added where consecutive values differ by more
+        than 180°, so that consecutive values differ by the actual rotation; the first value is
+        unchanged.
+    """
+    a = np.asarray(angles, dtype=np.float64).ravel()
+    return np.rad2deg(np.unwrap(np.deg2rad(a))) if a.size else a
+
+
 def main(argv: Sequence[str]) -> int:
     """Write the inputs and the command for one night.
 
@@ -155,7 +185,10 @@ def main(argv: Sequence[str]) -> int:
     ap.add_argument("--contrast0", default="1e-3")
     ap.add_argument("--workers", default="auto")
     ap.add_argument("--command-archive", default=None)
+    ap.add_argument("--min-frames", type=int, default=10)
+    ap.add_argument("--display", choices=["show", "none"], default="show")
     a = ap.parse_args(argv)
+    display = "--show" if a.display == "show" else "--no-display"
     night_dir = os.path.join(a.archive, a.night)
     red = os.path.join(night_dir, "reduced_py")
     out = os.path.join(night_dir, "klip_tpe", f"inputs_{a.tag}")
@@ -164,7 +197,8 @@ def main(argv: Sequence[str]) -> int:
     os.makedirs(out)
     tag = "_clean" if a.product == "clean" else ""
     manifest: Dict = {"night": a.night, "tag": a.tag, "product": a.product, "half": a.half,
-                      "psf_half": a.psf_half, "ref_nights": a.ref, "partitions": []}
+                      "psf_half": a.psf_half, "ref_nights": a.ref, "min_frames": a.min_frames,
+                      "partitions": [], "skipped": []}
     cubes: List[str] = []
     angles: List[str] = []
     psfs: List[str] = []
@@ -179,6 +213,13 @@ def main(argv: Sequence[str]) -> int:
             if not all(os.path.exists(p) for p in (src, asrc, psrc)):
                 print(f"{pre} cube{cn}: products missing; skipped")
                 continue
+            with fits.open(src, memmap=True) as hd:
+                n_src = 1 if hd[0].data.ndim == 2 else int(hd[0].data.shape[0])
+            if n_src < a.min_frames:
+                print(f"{pre} cube{cn}: {n_src} frames, fewer than --min-frames {a.min_frames}; skipped")
+                manifest["skipped"].append({"name": f"{side}_{'AB'[cn - 1]}", "frames": n_src,
+                                            "reason": f"fewer than {a.min_frames} frames"})
+                continue
             rc, used = None, []
             if a.ref:
                 stack = []
@@ -192,9 +233,15 @@ def main(argv: Sequence[str]) -> int:
                     continue
                 rc = np.concatenate(stack)
             cube = cut_frames(src, a.half)
-            ang = np.asarray(fits.getdata(asrc), dtype=np.float64).ravel()
-            if len(ang) != cube.shape[0]:
-                raise SystemExit(f"{asrc}: {len(ang)} angles for {cube.shape[0]} frames")
+            if cube.ndim == 2:
+                cube = cube[None]
+            ang_raw = np.asarray(fits.getdata(asrc), dtype=np.float64).ravel()
+            if len(ang_raw) != cube.shape[0]:
+                raise SystemExit(f"{asrc}: {len(ang_raw)} angles for {cube.shape[0]} frames")
+            if not np.all(np.isfinite(ang_raw)):
+                raise SystemExit(f"{asrc}: {int(np.sum(~np.isfinite(ang_raw)))} angles are not finite")
+            ang = unwrap_degrees(ang_raw)
+            unwrapped = bool(np.any(np.abs(ang - ang_raw) > 1e-9))
             psf = cut_frames(psrc, a.psf_half)
             c_out = os.path.join(out, f"{pre}_cube{cn}_{a.product}_c{2 * a.half}.fits")
             a_out = os.path.join(out, f"{pre}_angles{cn}_{a.product}.fits")
@@ -203,7 +250,9 @@ def main(argv: Sequence[str]) -> int:
             fits.PrimaryHDU(ang).writeto(a_out)
             fits.PrimaryHDU(psf).writeto(p_out)
             part = {"name": f"{side}_{'AB'[cn - 1]}", "cube": c_out, "angles": a_out, "psf": p_out,
-                    "frames": int(cube.shape[0]), "angle_min": float(ang.min()), "angle_max": float(ang.max()),
+                    "frames": int(cube.shape[0]), "angle_first": float(ang[0]), "angle_last": float(ang[-1]),
+                    "angle_min": float(ang.min()), "angle_max": float(ang.max()),
+                    "rotation_deg": float(ang.max() - ang.min()), "unwrapped": unwrapped,
                     "sources": {os.path.basename(p): sha256_of(p) for p in (src, asrc, psrc)}}
             if rc is not None:
                 r_out = os.path.join(out, f"{pre}_cube{cn}_ref_c{2 * a.half}.fits")
@@ -212,7 +261,8 @@ def main(argv: Sequence[str]) -> int:
                 refs.append(r_out)
             manifest["partitions"].append(part)
             cubes.append(c_out); angles.append(a_out); psfs.append(p_out); names.append(part["name"])
-            print(f"{pre} cube{cn}: {cube.shape[0]} frames, angles {ang.min():.1f}..{ang.max():.1f} deg"
+            print(f"{pre} cube{cn}: {cube.shape[0]} frames, angles {ang[0]:.1f} -> {ang[-1]:.1f} deg "
+                  f"(rotation {part['rotation_deg']:.1f} deg{', unwrapped across ±180' if unwrapped else ''})"
                   + (f", {part['ref_frames']} reference frames" if a.ref else ""))
     if not cubes:
         return 1
@@ -247,7 +297,7 @@ def main(argv: Sequence[str]) -> int:
               "  --pxscale 0.0179 --lam 11.1e-6 --diam 8.4 \\",
               f"  --ann-edges {' '.join(a.ann_edges)} --n-iter {' '.join(a.n_iter)} --n-init {' '.join(a.n_init)} \\",
               f"  --n-remeasure {a.n_remeasure} --n-top 6 --n-valid 8 --contrast0 {a.contrast0} \\",
-              f'  --workers "${{WORKERS:-{a.workers}}}" --seed 1 --verify --no-display \\',
+              f'  --workers "${{WORKERS:-{a.workers}}}" --seed 1 --verify {display} \\',
               '  --run-dir "${RUN:?}"']
     smoke_dir = there(os.path.join(night_dir, "klip_tpe", f"smoke_{a.tag}"))
     smoke = [ln.replace(f"RUN={q(run_dir)}", f"RUN={q(smoke_dir)}") for ln in head]
@@ -255,7 +305,7 @@ def main(argv: Sequence[str]) -> int:
     smoke += ["  --names " + " ".join(names) + " \\",
               "  --pxscale 0.0179 --lam 11.1e-6 --diam 8.4 \\",
               f"  --ann-edges {' '.join(a.ann_edges[:2])} --n-iter 10 --n-init 5 --n-top 1 --n-valid 1 --contrast0 {a.contrast0} \\",
-              '  --workers "${WORKERS:-16}" --seed 1 --no-display \\',
+              f'  --workers "${{WORKERS:-16}}" --seed 1 {display} \\',
               '  --run-dir "${RUN:?}"']
     for name, body in ((f"run_{a.tag}.sh", lines), (f"run_{a.tag}_smoke.sh", smoke)):
         sh = os.path.join(night_dir, "klip_tpe", name)
