@@ -800,7 +800,11 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
     Returns
     -------
     summary : dict
-        Counts and file names; also written as ``<night>_<side>_summary.json``.
+        Counts and file names; also written as ``<night>_<side>_summary.json``. Per chunk it holds
+        the split stage's star positions as found (``positions``, ``[[x, y] chop A, [x, y] chop B]``
+        in padded-frame pixels), the ``(chunk, chop)`` pairs replaced by
+        ``geometry.filter_positions`` (``positions_replaced``) and the cut centers used for each
+        chop after the edge check (``positions_cut``, keyed ``"1"`` and ``"2"``).
 
     Notes
     -----
@@ -897,14 +901,18 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
         second = geometry.padded(_start_median(mm, j2, hi, chops, chops[j2], k_med), fw)
         check = geometry.padded(_start_median(mm, lo, hi, chops, "CHOP_A", k_med), fw)
         raw_pos.append(geometry.find_positions(first, second, check, st))
-    tasks, prev1, prev2 = [], None, None
+    use_pos, replaced, cut_pos = geometry.split_cut_positions(raw_pos, st)
+    if replaced:
+        log(f"split: {len(replaced)} star positions more than {float(st['pos_outlier_px']):g} px from the "
+            f"median of their neighbor chunks' replaced by it (chunk, chop): {replaced}")
+    moved = [(c, cn) for cn in (1, 2) for c in range(len(chunks)) if cut_pos[cn][c] != use_pos[c][cn - 1]]
+    if moved:
+        log(f"split: the edge check moved the cut of {len(moved)} chunk/chop pairs off the found star "
+            f"(chunk, chop): {moved}")
+    tasks = []
     for cn in (1, 2):
         for c, (lo, hi) in enumerate(chunks):
-            p1, p2 = raw_pos[c]
-            q1 = geometry.edge_checked(p1, prev1, int(st["radius"]))
-            q2 = geometry.edge_checked(p2, prev2, int(st["radius"]))
-            prev1, prev2 = q1, q2
-            tasks.append((c, lo, hi, cn, (p1, p2), q1 if cn == 1 else q2, sci_path, n, chops, angles,
+            tasks.append((c, lo, hi, cn, tuple(use_pos[c]), cut_pos[cn][c], sci_path, n, chops, angles,
                           coadds, exptimes, st))
     log(f"science: {n} frames in {len(chunks)} chunks; split, align, center, pre-clean, pre-bin")
 
@@ -951,7 +959,8 @@ def reduce(settings: Settings, side: str, workers: int = 1, out_dir: Optional[st
                "sky_dirs": sky_dirs, "n_segments": n, "chunks": len(chunks),
                "nostar_frames": int(rounds[0]["nostar"]), "bad_pa": rounds[0]["pa"],
                "nostar_cut": None if not np.isfinite(rounds[0]["nostar_cut"]) else round(float(rounds[0]["nostar_cut"]), 2),
-               "positions": raw_pos, "cubes": {}}
+               "positions": raw_pos, "positions_replaced": replaced,
+               "positions_cut": {str(k): v for k, v in cut_pos.items()}, "cubes": {}}
     for cn in (1, 2):
         res = [r for r in results if r["cn"] == cn]
         parts = [r for r in res if r["binned"] is not None]

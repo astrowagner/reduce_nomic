@@ -110,8 +110,14 @@ def find_positions(first: np.ndarray, second: np.ndarray, check: np.ndarray, st:
     return pos1, pos2
 
 
-def edge_checked(pos: List[int], prev: Optional[List[int]], radius: int) -> List[int]:
+def edge_checked(pos: List[int], prev: Optional[List[int]], radius: int, framew: Optional[int] = None) -> List[int]:
     """Revert a coordinate whose cut would leave the padded frame (IDL ``auto_positions_edgecheck``).
+
+    The cut ``[pos - radius, pos + radius)`` fits in the padded frame when
+    ``radius <= pos <= framew - radius``. IDL tests ``pos - radius < 0 or pos - radius > radius``,
+    the same test only when ``framew = 3 radius``; for radius 400 in a 1500-px frame it rejects
+    every chop B position of the double-sided Vega nights (x near 895), and its reverts then carry a
+    single wrong position into every later chunk (``docs/PORTING.md``, "Split-stage positions").
 
     Parameters
     ----------
@@ -122,17 +128,126 @@ def edge_checked(pos: List[int], prev: Optional[List[int]], radius: int) -> List
         chunk inner); None for the first.
     radius : int
         Half-size of the cut in pixels.
+    framew : int, optional
+        Size of the padded frame in pixels. None applies IDL's bounds, [radius, 2 radius].
 
     Returns
     -------
     out : list of int
-        ``pos`` with each coordinate outside [radius, 2 radius] replaced by the previous one.
+        ``pos`` with each coordinate outside the bounds replaced by the previous one. With
+        ``framew`` given and no previous position, such a coordinate is moved to the nearest
+        bound instead, so that the cut stays inside the frame.
     """
+    hi = 2 * radius if framew is None else int(framew) - radius
     out = list(pos)
     for k in (0, 1):
-        if (out[k] - radius < 0 or out[k] - radius > radius) and prev is not None:
-            out[k] = prev[k]
+        if out[k] < radius or out[k] > hi:
+            if prev is not None:
+                out[k] = prev[k]
+            elif framew is not None:
+                out[k] = min(max(out[k], radius), hi)
     return out
+
+
+def filter_positions(raw: Sequence[Sequence[Sequence[int]]], tol: float, half: int = 5) -> Tuple[List[List[List[int]]], List[Tuple[int, int]]]:
+    """Replace a chunk's star position that disagrees with its chop throw (a port addition).
+
+    The split stage finds both chop positions in each chunk's starting frames. In a chunk that
+    starts in cloud or with the AO loop open the brightest point can be elsewhere: on Vega
+    2022-05-21 left, chunk 89 gave chop B at (752, 497) while chop A, at (627, 579), stayed with
+    its neighbors near (632, 579) and chop B's were near (899, 580). The chop throw (chop B minus
+    chop A) stays fixed while the telescope's pointing drifts, so a pair whose throw agrees with
+    its neighbors' is kept as found even when both positions moved (chunk 90 there: both 33 px
+    off, throw unchanged), and a pair whose throw disagrees has a wrong position. That position is
+    the one farther from its neighbors' median; it is rebuilt from the other chop's position and
+    the neighbors' median throw, or both are replaced by their neighbors' medians when both are
+    more than ``tol`` from them.
+
+    Parameters
+    ----------
+    raw : sequence of [pos1, pos2]
+        Per chunk, the ``[x, y]`` found for chop A and chop B (``find_positions``).
+    tol : float
+        Largest accepted difference in pixels, in x or in y, between a chunk's throw and its
+        neighbors' median throw (and the distance from the neighbors' median position beyond which
+        a position counts as wrong); 0 or less returns ``raw`` unchanged.
+    half : int, default 5
+        Number of neighboring chunks used on each side (the chunk itself excluded).
+
+    Returns
+    -------
+    out : list of [pos1, pos2]
+        ``raw`` with the wrong positions replaced, rounded to whole pixels. A run of fewer than 3
+        chunks is returned unchanged.
+    replaced : list of tuple of int
+        ``(chunk, chop)`` of every replaced position, chop 1 for A and 2 for B.
+    """
+    out = [[list(p1), list(p2)] for p1, p2 in raw]
+    replaced: List[Tuple[int, int]] = []
+    if tol <= 0 or len(raw) < 3:
+        return out, replaced
+    arr = np.asarray([[p1, p2] for p1, p2 in raw], dtype=float)     # shape (nchunk, 2, 2)
+    n = arr.shape[0]
+    for c in range(n):
+        nb = [j for j in range(max(0, c - half), min(n, c + half + 1)) if j != c]
+        throw = np.median(arr[nb, 1, :] - arr[nb, 0, :], axis=0)
+        if np.all(np.abs((arr[c, 1] - arr[c, 0]) - throw) <= tol):
+            continue
+        med = [np.median(arr[nb, k, :], axis=0) for k in (0, 1)]
+        dev = [float(np.max(np.abs(arr[c, k] - med[k]))) for k in (0, 1)]
+        if dev[0] > tol and dev[1] > tol:
+            new = {0: med[0], 1: med[1]}
+        elif dev[1] >= dev[0]:
+            new = {1: arr[c, 0] + throw}
+        else:
+            new = {0: arr[c, 1] - throw}
+        for k, v in new.items():
+            out[c][k] = [int(round(v[0])), int(round(v[1]))]
+            replaced.append((c, k + 1))
+    return out, replaced
+
+
+def split_cut_positions(raw: Sequence[Sequence[Sequence[int]]], st: Dict) -> Tuple[List[List[List[int]]], List[Tuple[int, int]], Dict[int, List[List[int]]]]:
+    """Decide where the split stage cuts each chunk's two chop positions.
+
+    The found positions are first filtered (``filter_positions``), then checked against the
+    padded frame chunk by chunk in the IDL loop order, chop A's pass over every chunk before chop
+    B's, with each chop's previous position carried through both passes as IDL's ``prevpos1`` and
+    ``prevpos2`` are (``edge_checked``).
+
+    Parameters
+    ----------
+    raw : sequence of [pos1, pos2]
+        Per chunk, the ``[x, y]`` found for chop A and chop B (``find_positions``), in padded-frame
+        pixels.
+    st : dict
+        Settings ``radius``, ``framew``, ``auto_positions_edgecheck``, ``edgecheck_idl_bounds`` and
+        ``pos_outlier_px``.
+
+    Returns
+    -------
+    use : list of [pos1, pos2]
+        The positions after ``filter_positions``; they also say where the other chop's negative
+        image is blocked.
+    replaced : list of tuple of int
+        ``(chunk, chop)`` replaced by ``filter_positions``.
+    cut : dict
+        ``{1: [...], 2: [...]}``: per chunk, the ``[x, y]`` cut center for chop A and chop B.
+    """
+    use, replaced = filter_positions(raw, float(st.get("pos_outlier_px") or 0.0))
+    radius = int(st["radius"])
+    fw = None if st.get("edgecheck_idl_bounds") else int(st["framew"])
+    cut: Dict[int, List[List[int]]] = {1: [], 2: []}
+    prev1 = prev2 = None
+    for cn in (1, 2):
+        for p1, p2 in use:
+            if st.get("auto_positions_edgecheck", 1):
+                q1, q2 = edge_checked(p1, prev1, radius, fw), edge_checked(p2, prev2, radius, fw)
+            else:
+                q1, q2 = list(p1), list(p2)
+            prev1, prev2 = q1, q2
+            cut[cn].append(q1 if cn == 1 else q2)
+    return use, replaced, cut
 
 
 def cut_chop(frames: np.ndarray, chops: Sequence[str], which: str, pos_raw: Tuple[List[int], List[int]],

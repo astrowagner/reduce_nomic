@@ -86,6 +86,13 @@ PORT_DEFAULTS: Dict[str, Any] = {
     "split_median_frames": 20,  # split stage: find the chop positions in the median of up to this many
                                 # frames of each chop at the chunk's start (1 reproduces IDL's single
                                 # frames)
+    "pos_outlier_px": 20.0,   # split stage: a chunk whose chop throw (chop B minus chop A) differs
+                              # by more than this many pixels, in x or y, from the median throw of up
+                              # to 5 neighboring chunks on each side has its wrong position rebuilt
+                              # (geometry.filter_positions; 0 = off, as IDL)
+    "edgecheck_idl_bounds": False,  # split stage: True reproduces IDL's edge-check bounds
+                                    # [radius, 2 radius]; False uses the padded frame's own,
+                                    # [radius, framew - radius] (geometry.edge_checked)
     "pa_invalid": "recompute",  # frames whose LBT_PARA is unusable (999 or absent): "recompute" from
                                 # DATE-OBS, TIME-END and the headers' pointing, "drop" them, or
                                 # "keep" the values (IDL); unused with fix_pa (combine.repair_angles)
