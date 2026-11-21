@@ -4,7 +4,7 @@ usage: python tools/klip_tpe_inputs.py ARCHIVE NIGHT --tag TAG [--sides left rig
        [--command-archive PATH] [--min-frames 10] [--display show|none] [--ref-min-dpa DEG]
        [--psf-half 30] [--product all|clean] [--ref NIGHT ...] [--ann-edges 11 34 67]
        [--n-iter 400 400] [--n-init 60 60] [--n-remeasure 3] [--contrast0 1e-3] [--workers auto]
-       [--use-contrast C ...] [--keep-nan] [--min-coverage F]
+       [--use-contrast C ...] [--keep-nan] [--min-coverage F] [--link BASE ...]
 
 KLIP-TPE's generic adapter (``klip-tpe generic``) takes one registered cube, its derotation angles
 and a PSF template per partition, and optionally a reference cube (RDI). For each side and chop of
@@ -41,9 +41,14 @@ and a PSF template per partition, and optionally a reference cube (RDI). For eac
 
 and ``<ARCHIVE>/<NIGHT>/klip_tpe/run_<TAG>.sh``, the ``klip-tpe generic`` command over all the
 partitions, writing to ``<ARCHIVE>/<NIGHT>/klip_tpe/run_<TAG>/``, with ``run_<TAG>_smoke.sh``, a
-10-evaluation test of the first annulus writing to ``smoke_<TAG>/``. Both need the environment
-variable ``KT`` set to the ``klip-tpe`` executable to use (a pinned clone's); ``WORKERS`` sets the
-worker budget (default ``--workers``, 16 for the smoke test).
+10-evaluation test of the first annulus writing to ``smoke_<TAG>/``, and ``resume_<TAG>.sh``, which
+resumes ``run_<TAG>/`` from its checkpoint (``klip-tpe resume --instrument generic`` with the run's
+data arguments: klip-tpe's run record restores the data arguments only of runs made with
+``--root``, and the checkpoint holds the rest of the search's configuration). All three need the
+environment variable ``KT`` set to the ``klip-tpe`` executable to use (a pinned clone's);
+``WORKERS`` sets the worker budget (default ``--workers``, 16 for the smoke test). With ``--link``
+the three run ``tools/klip_tpe_linked.py``, copied into ``inputs_<TAG>/``, with the Python beside
+``KT``, so that the bases given are linked across the partitions.
 
 Parameters
 ----------
@@ -113,6 +118,12 @@ NIGHT : str
     source or a noise aperture (its ``--min-coverage``, default 0.5; 0 masks only where no
     frame has data). Written into both scripts and recorded in the manifest
     (``min_coverage``); needs klip-tpe ``bf99474`` or later.
+--link : str list, optional
+    Reduction parameters that take one value for every partition (each chop), such as ``bin filter
+    angsep anglemax``; without it klip-tpe links its default, ``bin`` and ``filter``. The three
+    scripts then run the command through ``klip_tpe_linked.py`` (its docstring says how), and the
+    manifest records the bases, the wrapper's path and its SHA-256 (``link``, None without
+    ``--link``).
 
 Returns
 -------
@@ -128,11 +139,11 @@ inputs_<TAG>/ : files
     (``dropped_off_center``: index in the binned cube and offset in pixels), the reference frames
     with NaN (``nan_within_cut`` per reference night, left out unless ``nan_kept``) or with the
     star off the center (``off_center``), the skipped partitions, the fixed injection contrasts
-    (``use_contrast``, None when every annulus calibrates), ``keep_nan`` and ``min_coverage``, and
-    per partition the frames kept with NaN within the cut (``frames_with_nan``) and the cut's NaN
-    fraction (``nan_fraction``)).
-run_<TAG>.sh, run_<TAG>_smoke.sh : file
-    The run and its smoke test, for Kevin to check and run.
+    (``use_contrast``, None when every annulus calibrates), ``keep_nan``, ``min_coverage`` and
+    ``link``, and per partition the frames kept with NaN within the cut (``frames_with_nan``) and
+    the cut's NaN fraction (``nan_fraction``)); with ``--link`` also ``klip_tpe_linked.py``.
+run_<TAG>.sh, run_<TAG>_smoke.sh, resume_<TAG>.sh : file
+    The run, its smoke test and its resume, for Kevin to check and run.
 """
 from __future__ import annotations
 
@@ -140,7 +151,9 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shlex
+import shutil
 import sys
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -370,9 +383,17 @@ def main(argv: Sequence[str]) -> int:
     ap.add_argument("--use-contrast", nargs="+", default=None)
     ap.add_argument("--keep-nan", action="store_true")
     ap.add_argument("--min-coverage", type=float, default=None)
+    ap.add_argument("--link", nargs="+", default=None)
     a = ap.parse_args(argv)
     if a.min_coverage is not None and not (np.isfinite(a.min_coverage) and 0.0 <= a.min_coverage <= 1.0):
         ap.error("--min-coverage is a fraction of the frames, from 0 to 1")
+    link: Optional[List[str]] = None
+    if a.link is not None:
+        bad = [b for b in a.link if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", b)]
+        if bad:
+            ap.error(f"--link takes parameter names, not {' '.join(bad)}")
+        link = list(dict.fromkeys(a.link))
+    wrapper_src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "klip_tpe_linked.py")
     if a.ref and a.ref_min_dpa is None:
         ap.error("--ref needs --ref-min-dpa (degrees; 0 keeps every reference frame)")
     use_contrast: Optional[List[float]] = None
@@ -396,7 +417,7 @@ def main(argv: Sequence[str]) -> int:
     manifest: Dict = {"night": a.night, "tag": a.tag, "product": a.product, "half": a.half,
                       "psf_half": a.psf_half, "ref_nights": a.ref, "min_frames": a.min_frames,
                       "use_contrast": use_contrast, "keep_nan": bool(a.keep_nan),
-                      "min_coverage": a.min_coverage, "partitions": [], "skipped": []}
+                      "min_coverage": a.min_coverage, "link": None, "partitions": [], "skipped": []}
     cubes: List[str] = []
     angles: List[str] = []
     psfs: List[str] = []
@@ -574,28 +595,48 @@ def main(argv: Sequence[str]) -> int:
         for k in ("cube", "angles", "psf", "ref"):
             if k in part:
                 part[k] = os.path.join(root, os.path.relpath(part[k], a.archive))
-    with open(os.path.join(out, "manifest.json"), "x") as fh:
-        json.dump(manifest, fh, indent=1)
     cmd_root = a.command_archive or a.archive
     def there(path: str) -> str:
         """The path as seen from ``--command-archive``."""
         return os.path.join(cmd_root, os.path.relpath(path, a.archive))
+    q = shlex.quote
+    if link:
+        wrapper = os.path.join(out, "klip_tpe_linked.py")
+        shutil.copyfile(wrapper_src, wrapper)
+        manifest["link"] = {"bases": link, "wrapper": there(wrapper), "wrapper_sha256": sha256_of(wrapper)}
+        # the Python of the venv whose klip-tpe KT names runs the wrapper, so it imports that klip_tpe
+        launch = ['PY="$(dirname "${KT:?}")/python"',
+                  '[ -x "${PY:?}" ] || { echo "${PY} is not there: KT must be a virtual environment\'s klip-tpe"; exit 1; }',
+                  f'"${{PY:?}}" {q(there(wrapper))} --link {" ".join(link)} --']
+    else:
+        launch = ['"${KT:?}"']
+    with open(os.path.join(out, "manifest.json"), "x") as fh:
+        json.dump(manifest, fh, indent=1)
     cubes, angles, psfs, refs = ([there(x) for x in lst] for lst in (cubes, angles, psfs, refs))
     run_dir = there(os.path.join(night_dir, "klip_tpe", f"run_{a.tag}"))
-    q = shlex.quote
-    lines = ["#!/usr/bin/env bash",
-             f"# KLIP-TPE generic run for {a.night} ({a.tag}); made by reduce_nomic tools/klip_tpe_inputs.py",
-             "set -euo pipefail",
-             'KT="${KT:?set KT to the klip-tpe executable of the pinned clone}"',
-             f'RUN={q(run_dir)}',
-             '[ ! -e "${RUN:?}" ] || { echo "${RUN} exists"; exit 1; }',
-             '"${KT:?}" generic \\',
-             "  --cube " + " ".join(q(c) for c in cubes) + " \\",
-             "  --angles " + " ".join(q(x) for x in angles) + " \\",
-             "  --psf " + " ".join(q(x) for x in psfs) + " \\"]
+    data_args = ["  --cube " + " ".join(q(c) for c in cubes) + " \\",
+                 "  --angles " + " ".join(q(x) for x in angles) + " \\",
+                 "  --psf " + " ".join(q(x) for x in psfs) + " \\"]
     if refs:
-        lines.append("  --ref-cube " + " ".join(q(x) for x in refs) + " \\")
+        data_args.append("  --ref-cube " + " ".join(q(x) for x in refs) + " \\")
+    data_args += ["  --names " + " ".join(names) + " \\",
+                  "  --pxscale 0.0179 --lam 11.1e-6 --diam 8.4 \\"]
+    preamble = ["#!/usr/bin/env bash",
+                f"# KLIP-TPE generic run for {a.night} ({a.tag}); made by reduce_nomic tools/klip_tpe_inputs.py",
+                "set -euo pipefail",
+                'KT="${KT:?set KT to the klip-tpe executable of the pinned clone}"',
+                f'RUN={q(run_dir)}']
+    lines = preamble + ['[ ! -e "${RUN:?}" ] || { echo "${RUN} exists"; exit 1; }'] + launch[:-1] + [
+        launch[-1] + " generic \\"] + data_args[:-2]
     head = list(lines)
+    resume = preamble + [
+        '[ -f "${RUN:?}/checkpoint.json" ] || { echo "${RUN} has no checkpoint.json"; exit 1; }',
+        '[ ! -e "${RUN:?}/final_results.json" ] || { echo "${RUN} is already finished"; exit 1; }'] + launch[:-1] + [
+        launch[-1] + " resume --instrument generic \\"] + data_args + [
+        f'  --workers "${{WORKERS:-{a.workers}}}" {display} \\',
+        '  --run-dir "${RUN:?}"']
+    resume[1] = (f"# Resume the KLIP-TPE generic run for {a.night} ({a.tag}) from its checkpoint, which holds the "
+                 f"search's configuration; made by reduce_nomic tools/klip_tpe_inputs.py")
     lines += ["  --names " + " ".join(names) + " \\",
               "  --pxscale 0.0179 --lam 11.1e-6 --diam 8.4 \\",
               f"  --ann-edges {' '.join(a.ann_edges)} --n-iter {' '.join(a.n_iter)} --n-init {' '.join(a.n_init)} \\",
@@ -610,12 +651,13 @@ def main(argv: Sequence[str]) -> int:
               f"  --ann-edges {' '.join(a.ann_edges[:2])} --n-iter 10 --n-init 5 --n-top 1 --n-valid 1 --contrast0 {a.contrast0}{extra_opts} \\",
               f'  --workers "${{WORKERS:-16}}" --seed 1 {display} \\',
               '  --run-dir "${RUN:?}"']
-    for name, body in ((f"run_{a.tag}.sh", lines), (f"run_{a.tag}_smoke.sh", smoke)):
+    for name, body in ((f"run_{a.tag}.sh", lines), (f"run_{a.tag}_smoke.sh", smoke), (f"resume_{a.tag}.sh", resume)):
         sh = os.path.join(night_dir, "klip_tpe", name)
         with open(sh, "x") as fh:
             fh.write("\n".join(body) + "\n")
         os.chmod(sh, 0o755)
-    print(f"wrote {out}/, run_{a.tag}.sh and run_{a.tag}_smoke.sh in {os.path.join(night_dir, 'klip_tpe')}")
+    print(f"wrote {out}/, run_{a.tag}.sh, run_{a.tag}_smoke.sh and resume_{a.tag}.sh in "
+          f"{os.path.join(night_dir, 'klip_tpe')}" + (f" (linking {', '.join(link)})" if link else ""))
     return 0
 
 

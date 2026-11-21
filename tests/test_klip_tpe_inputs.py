@@ -325,3 +325,73 @@ def test_frames_with_the_star_off_center_left_out(tmp_path):
     import klip_tpe_inputs as k
     cube = fits.getdata(os.path.join(d, "Fake_20220521_left_cube1_all_c80.fits"))
     assert np.all(k.frame_offsets(cube) < 1.0)                            # 0.71 px: the half-pixel center
+
+
+def _fake_venv(d):
+    """A folder ``bin`` with ``klip-tpe`` and ``python`` that print their name and arguments, one per line."""
+    b = os.path.join(d, "venv", "bin")
+    os.makedirs(b)
+    for name in ("klip-tpe", "python"):
+        p = os.path.join(b, name)
+        with open(p, "w") as fh:
+            fh.write('#!/usr/bin/env bash\nprintf "%s\\n" "$(basename "$0")" "$@"\n')
+        os.chmod(p, 0o755)
+    return os.path.join(b, "klip-tpe")
+
+
+def test_resume_script_repeats_the_data_arguments_and_link_runs_the_wrapper(tmp_path):
+    """resume_<TAG>.sh gives klip-tpe resume the run's data arguments and nothing the checkpoint holds;
+    --link runs all three scripts through the copied klip_tpe_linked.py with the venv's Python."""
+    root = str(tmp_path)
+    _night(root, "Fake_20220101", 10)
+    base = [sys.executable, TOOL, root, "Fake_20220101", "--half", "40", "--psf-half", "10",
+            "--ann-edges", "0", "20", "35", "--n-iter", "20", "20", "--n-init", "5", "5"]
+    kt = os.path.join(root, "Fake_20220101", "klip_tpe")
+    r = subprocess.run(base + ["--tag", "plain"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    run = open(os.path.join(kt, "run_plain.sh")).read().splitlines()
+    res = open(os.path.join(kt, "resume_plain.sh")).read().splitlines()
+    data = [ln for ln in run if ln.startswith(("  --cube", "  --angles", "  --psf", "  --names", "  --pxscale"))]
+    assert len(data) == 5 and [ln for ln in res if ln in data] == data
+    assert '"${KT:?}" resume --instrument generic \\' in res
+    assert '  --workers "${WORKERS:-auto}" --show \\' in res and res[-1] == '  --run-dir "${RUN:?}"'
+    assert not any(opt in ln for ln in res for opt in ("--n-iter", "--ann-edges", "--use-contrast", "--seed"))
+    assert json.load(open(os.path.join(kt, "inputs_plain", "manifest.json")))["link"] is None
+    r = subprocess.run(base + ["--tag", "lnk", "--use-contrast", "5e-4", "--link", "bin", "filter", "angsep",
+                               "anglemax", "angsep"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    wrapper = os.path.join(kt, "inputs_lnk", "klip_tpe_linked.py")
+    src = os.path.join(os.path.dirname(TOOL), "klip_tpe_linked.py")
+    assert open(wrapper, "rb").read() == open(src, "rb").read()
+    m = json.load(open(os.path.join(kt, "inputs_lnk", "manifest.json")))
+    assert m["link"]["bases"] == ["bin", "filter", "angsep", "anglemax"] and m["link"]["wrapper"] == wrapper
+    sys.path.insert(0, os.path.dirname(TOOL))
+    import klip_tpe_inputs as k
+    assert m["link"]["wrapper_sha256"] == k.sha256_of(wrapper)
+    for name in ("run_lnk.sh", "run_lnk_smoke.sh", "resume_lnk.sh", "run_plain.sh", "resume_plain.sh"):
+        assert subprocess.run(["bash", "-n", os.path.join(kt, name)]).returncode == 0, name
+    # what each script hands over, with stand-ins for klip-tpe and the venv's Python
+    env = dict(os.environ, KT=_fake_venv(root))
+    out = subprocess.run(["bash", os.path.join(kt, "run_lnk.sh")], env=env, capture_output=True, text=True)
+    args = out.stdout.splitlines()
+    assert out.returncode == 0 and args[:8] == ["python", wrapper, "--link", "bin", "filter", "angsep",
+                                                 "anglemax", "--"]
+    assert args[8] == "generic" and "--use-contrast" in args and args[-1] == os.path.join(kt, "run_lnk")
+    out = subprocess.run(["bash", os.path.join(kt, "resume_lnk.sh")], env=env, capture_output=True, text=True)
+    assert out.returncode != 0 and "has no checkpoint.json" in out.stdout
+    os.makedirs(os.path.join(kt, "run_lnk"))
+    open(os.path.join(kt, "run_lnk", "checkpoint.json"), "w").close()
+    out = subprocess.run(["bash", os.path.join(kt, "resume_lnk.sh")], env=env, capture_output=True, text=True)
+    args = out.stdout.splitlines()
+    assert out.returncode == 0 and args[8:11] == ["resume", "--instrument", "generic"]
+    assert "--use-contrast" not in args and args[-1] == os.path.join(kt, "run_lnk")
+    open(os.path.join(kt, "run_lnk", "final_results.json"), "w").close()
+    out = subprocess.run(["bash", os.path.join(kt, "resume_lnk.sh")], env=env, capture_output=True, text=True)
+    assert out.returncode != 0 and "is already finished" in out.stdout
+    os.makedirs(os.path.join(kt, "run_plain"))
+    open(os.path.join(kt, "run_plain", "checkpoint.json"), "w").close()
+    out = subprocess.run(["bash", os.path.join(kt, "resume_plain.sh")], env=env, capture_output=True, text=True)
+    assert out.returncode == 0 and out.stdout.splitlines()[:4] == ["klip-tpe", "resume", "--instrument", "generic"]
+    r = subprocess.run(base + ["--tag", "bad", "--link", "bin;rm"], capture_output=True, text=True)
+    assert r.returncode != 0 and "--link takes parameter names" in r.stderr
+    assert not os.path.exists(os.path.join(kt, "inputs_bad"))
