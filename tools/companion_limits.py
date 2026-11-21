@@ -248,8 +248,15 @@ def plot(spec: dict, curves: Dict[str, cp.ContrastCurve], env: Dict[str, np.ndar
     par = st["parallax_mas"]
     lod = cp.lambda_over_d_arcsec(band["lambda_um"], band["aperture_m"])
     to_c = lambda spt: float(cp.absmag_to_contrast(seq.m_w3_of(spt), st["mag"], par))  # noqa: E731
-    fig, (ax, bx) = plt.subplots(1, 2, figsize=(13.0, 6.6), gridspec_kw={"width_ratios": [1.25, 1.0]})
-    fig.subplots_adjust(left=0.065, right=0.985, top=0.80, bottom=0.27, wspace=0.22)
+    n_plot = sum(1 for c in spec["curves"] if c.get("plot") and c["id"] in curves)
+    # Heights in inches: titles and the top axis, the panels, the x labels, the legend (a title row
+    # and one row per two curves), the footnote; the figure grows with the legend.
+    top_in, plot_in, xlab_in, foot_in = 1.3, 4.0, 0.6, 0.45
+    leg_in = 0.2 * (1 + (n_plot + 1) // 2) + 0.1
+    height = top_in + plot_in + xlab_in + leg_in + foot_in
+    fig, (ax, bx) = plt.subplots(1, 2, figsize=(13.0, height), gridspec_kw={"width_ratios": [1.25, 1.0]})
+    fig.subplots_adjust(left=0.065, right=0.985, top=1 - top_in / height,
+                        bottom=(xlab_in + leg_in + foot_in) / height, wspace=0.22)
     plain = matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}")
     for a in (ax, bx):
         a.set_facecolor("#fcfcfb")
@@ -285,8 +292,10 @@ def plot(spec: dict, curves: Dict[str, cp.ContrastCurve], env: Dict[str, np.ndar
         ok = np.isfinite(s["median"])
         lab = (f"{c['date']} {c.get('short', c['method'].split(' (')[0])}" +
                (", Azimuthal" if azim else f", {n_pa} PA{'s' if n_pa != 1 else ''}"))
+        rdi = "RDI" in c["method"]                   # same night, same color and marker: dash-dot tells RDI apart
+        ls = (0, (7, 2, 1.5, 2)) if rdi else ("-" if well else (0, (5, 2.5)))
         ax.plot(cur.separations[ok], s["median"][ok], color=SLOTS[k], lw=2.0 if well else 1.4,
-                ls="-" if well else (0, (5, 2.5)), marker=MARKERS[k], ms=6 if well else 5,
+                ls=ls, marker=MARKERS[k], ms=6 if well else 5,
                 mfc=SLOTS[k] if well else "white", mec=SLOTS[k], mew=1.4, label=lab, zorder=3)
         if well and not azim:
             ax.fill_between(cur.separations[ok], s["median"][ok], s["worst"][ok], color=SLOTS[k],
@@ -315,7 +324,8 @@ def plot(spec: dict, curves: Dict[str, cp.ContrastCurve], env: Dict[str, np.ndar
     ax.set_xticks([0.05, 0.1, 0.2, 0.5, 1, 2, 5])
     ax.xaxis.set_major_formatter(plain)
     ax.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
-    leg = ax.legend(loc="upper left", bbox_to_anchor=(0.0, -0.12), ncol=2, fontsize=8.5, frameon=False,
+    leg = ax.legend(loc="upper left", bbox_to_anchor=(0.065, (leg_in + foot_in) / height), bbox_transform=fig.transFigure,
+                    ncol=2, fontsize=8.5, frameon=False, borderaxespad=0.0,
                     handlelength=2.6, title="Night, Method, Position Angles With Limits", title_fontsize=8.5,
                     alignment="left")
     leg.get_title().set_color(INK2)
@@ -365,8 +375,10 @@ def plot(spec: dict, curves: Dict[str, cp.ContrastCurve], env: Dict[str, np.ndar
     foot = (f"d = {1000 / par:.2f} pc ({st['parallax_mas']} ± {st['parallax_err_mas']} mas); "
             f"m({band['name']}) = {st['mag']:.2f}; companion magnitudes: W3 as the {band['name']} proxy, "
             f"M_Ks and masses from Mamajek (2022.04.16), Ks−W3 from Mamajek through K5V and Cifuentes et al. (2020) from K7V. "
-            f"Open markers and dashed lines: 1–2 position angles. {miss}.")
-    fig.text(0.065, 0.012, foot, fontsize=7.5, color=INK2, wrap=True, ha="left", va="bottom")
+            f"Open markers and dashed lines: 1–2 position angles." +
+            (" Dash-dot lines: RDI." if any("RDI" in c["method"] for c in spec["curves"] if c["id"] in curves) else "") +
+            (f" {miss}." if miss else ""))
+    fig.text(0.065, 0.1 / height, foot, fontsize=7.5, color=INK2, wrap=True, ha="left", va="bottom")
     fig.savefig(out_base + ".png", dpi=200, facecolor="white")
     fig.savefig(out_base + ".pdf", facecolor="white")
     plt.close(fig)
