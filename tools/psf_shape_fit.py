@@ -170,7 +170,7 @@ def main(argv: Sequence[str]) -> int:
         n, ny, nx = c["frames"].shape
         bg = (min(ny, nx) * 0.36, min(ny, nx) * 0.49)
         mom = ps.weighted_moments(c["frames"], a.sigma_w, c["x0"], c["y0"], bg_annulus=bg)
-        span = float(np.ptp(c["q"]))
+        span = float(np.ptp(np.rad2deg(np.unwrap(np.deg2rad(c["q"])))))   # frames in time order; q may wrap at 180
         rot.setdefault(c["night"], []).append((c["label"], len(c["q"]), float(c["q"].min()), float(c["q"].max()), span))
         fits_s = {}
         for m in a.spins:
