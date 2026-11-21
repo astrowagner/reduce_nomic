@@ -24,8 +24,9 @@ and a PSF template per partition, and optionally a reference cube (RDI). For eac
   KLIP-TPE normalizes it to unit total flux, so contrasts are flux ratios to the star's flux
   within that box (the frames are peak-scaled, so every frame shares the unit);
 * with ``--ref``: the same side and chop of the given nights' IDL-clean frames, cut the same way
-  and stacked, as the reference library, without frames whose angle was averaged across the wrap
-  and without frames within ``--ref-min-dpa`` of any science frame's angle. A sky-fixed companion
+  and stacked, as the reference library, without cubes of fewer than ``--min-frames`` frames,
+  frames whose angle was averaged across the wrap and frames within ``--ref-min-dpa`` of any
+  science frame's angle. A sky-fixed companion
   sits at detector angle φ - q, so in a reference frame whose angle q_r is close to a science
   frame's q_s it sits where it does in the science frame, and RDI would subtract it.
 
@@ -62,7 +63,8 @@ NIGHT : str
     elsewhere where this runs (the device sandbox sees /mnt/RAID64TB/NOMIC as ~/mnt/NOMIC).
 --min-frames : int, default 10
     Fewest frames a partition needs; a side and chop with fewer is left out, and the manifest
-    lists it under ``skipped`` with its frame count.
+    lists it under ``skipped`` with its frame count. A reference night's cube with fewer is left
+    out of the library too.
 --display : {"show", "none"}, default "show"
     ``show`` writes ``--show`` into both scripts (KLIP-TPE's live window), ``none`` writes
     ``--no-display``.
@@ -266,6 +268,10 @@ def main(argv: Sequence[str]) -> int:
                     rang = np.asarray(fits.getdata(rasrc), dtype=np.float64).ravel()
                     if len(rang) != rframes.shape[0] or not np.all(np.isfinite(rang)):
                         raise SystemExit(f"{rasrc}: {len(rang)} angles for {rframes.shape[0]} frames, or angles not finite")
+                    if rang.size < a.min_frames:                  # a reference cube this short is a failed reduction
+                        ref_info.append({"night": rn, "frames": int(rang.size), "used": 0,
+                                         "reason": f"fewer than {a.min_frames} frames"})
+                        continue
                     ok = np.ones(rang.size, dtype=bool)
                     rbad = wrap_outliers(rang)
                     ok[rbad] = False

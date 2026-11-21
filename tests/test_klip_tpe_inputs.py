@@ -128,6 +128,12 @@ def test_reference_frames_near_the_science_angles_left_out(tmp_path):
     det = m["partitions"][0]["ref_detail"][0]
     assert (det["frames"], det["within_min_dpa"], det["used"], det["wrap_averaged"]) == (7, 3, 4, 0)
     assert m["partitions"][0]["ref_min_dpa"] == 15.0
+    _night(root, "Fake_20220103", 1, angles=np.array([-60.0]))           # a failed reduction: one frame
+    r1 = subprocess.run([sys.executable, TOOL, root, "Fake_20220101", "--tag", "rdi1", "--half", "40", "--psf-half", "10",
+                         "--ref", "Fake_20220102", "Fake_20220103", "--ref-min-dpa", "15"], capture_output=True, text=True)
+    assert r1.returncode == 0, r1.stderr
+    m1 = json.load(open(os.path.join(root, "Fake_20220101", "klip_tpe", "inputs_rdi1", "manifest.json")))
+    assert m1["partitions"][0]["ref_frames"] == 4 and m1["partitions"][0]["ref_detail"][1]["used"] == 0
     r2 = subprocess.run([sys.executable, TOOL, root, "Fake_20220101", "--tag", "rdi2", "--half", "40", "--psf-half", "10",
                          "--ref", "Fake_20220102", "--ref-min-dpa", "60"], capture_output=True, text=True)
     assert r2.returncode == 1 and "skipped" in r2.stdout                # no reference frame is 60 deg away
