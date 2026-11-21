@@ -47,6 +47,9 @@ def test_inputs_centered_with_references(tmp_path):
     assert m["partitions"][0]["ref_nights_used"] == ["Fake_20220102"]
     sh = open(os.path.join(root, "Fake_20220101", "klip_tpe", "run_rdi.sh")).read()
     assert "set -euo pipefail" in sh and "--ref-cube" in sh and "--names left_A left_B" in sh
+    assert '--workers "${WORKERS:-auto}"' in sh
+    smoke = open(os.path.join(root, "Fake_20220101", "klip_tpe", "run_rdi_smoke.sh")).read()
+    assert "--n-iter 10" in smoke and "smoke_rdi" in smoke and "--ann-edges 11 34 " in smoke
     again = subprocess.run([sys.executable, TOOL, root, "Fake_20220101", "--tag", "rdi"], capture_output=True, text=True)
     assert again.returncode != 0                         # an existing tag is refused
     r2 = subprocess.run([sys.executable, TOOL, root, "Fake_20220101", "--tag", "adi", "--half", "40", "--psf-half", "10",

@@ -21,8 +21,10 @@ and a PSF template per partition, and optionally a reference cube (RDI). For eac
   and stacked, as the reference library.
 
 and ``<ARCHIVE>/<NIGHT>/klip_tpe/run_<TAG>.sh``, the ``klip-tpe generic`` command over all the
-partitions, writing to ``<ARCHIVE>/<NIGHT>/klip_tpe/run_<TAG>/``; it needs the environment
-variable ``KT`` set to the ``klip-tpe`` executable to use (a pinned clone's).
+partitions, writing to ``<ARCHIVE>/<NIGHT>/klip_tpe/run_<TAG>/``, with ``run_<TAG>_smoke.sh``, a
+10-evaluation test of the first annulus writing to ``smoke_<TAG>/``. Both need the environment
+variable ``KT`` set to the ``klip-tpe`` executable to use (a pinned clone's); ``WORKERS`` sets the
+worker budget (default ``--workers``, 16 for the smoke test).
 
 Parameters
 ----------
@@ -55,8 +57,8 @@ inputs_<TAG>/ : files
     ``<pre>_angles<n>_<product>.fits`` (degrees), ``<pre>_cube<n>_psf<2 psf_half>.fits``, with
     ``--ref`` ``<pre>_cube<n>_ref_c<2 half>.fits``, and ``manifest.json`` (sources with their
     SHA-256, cuts, frame counts, angle ranges).
-run_<TAG>.sh : file
-    The command, for Kevin to check and run.
+run_<TAG>.sh, run_<TAG>_smoke.sh : file
+    The run and its smoke test, for Kevin to check and run.
 """
 from __future__ import annotations
 
@@ -240,17 +242,27 @@ def main(argv: Sequence[str]) -> int:
              "  --psf " + " ".join(q(x) for x in psfs) + " \\"]
     if refs:
         lines.append("  --ref-cube " + " ".join(q(x) for x in refs) + " \\")
+    head = list(lines)
     lines += ["  --names " + " ".join(names) + " \\",
               "  --pxscale 0.0179 --lam 11.1e-6 --diam 8.4 \\",
               f"  --ann-edges {' '.join(a.ann_edges)} --n-iter {' '.join(a.n_iter)} --n-init {' '.join(a.n_init)} \\",
               f"  --n-remeasure {a.n_remeasure} --n-top 6 --n-valid 8 --contrast0 {a.contrast0} \\",
-              f"  --workers {a.workers} --seed 1 --verify --no-display \\",
+              f'  --workers "${{WORKERS:-{a.workers}}}" --seed 1 --verify --no-display \\',
               '  --run-dir "${RUN:?}"']
-    sh = os.path.join(night_dir, "klip_tpe", f"run_{a.tag}.sh")
-    with open(sh, "x") as fh:
-        fh.write("\n".join(lines) + "\n")
-    os.chmod(sh, 0o755)
-    print(f"wrote {out}/ and {sh}")
+    smoke_dir = there(os.path.join(night_dir, "klip_tpe", f"smoke_{a.tag}"))
+    smoke = [ln.replace(f"RUN={q(run_dir)}", f"RUN={q(smoke_dir)}") for ln in head]
+    smoke[1] = f"# KLIP-TPE smoke test for {a.night} ({a.tag}): 10 evaluations on the first annulus; its numbers mean nothing"
+    smoke += ["  --names " + " ".join(names) + " \\",
+              "  --pxscale 0.0179 --lam 11.1e-6 --diam 8.4 \\",
+              f"  --ann-edges {' '.join(a.ann_edges[:2])} --n-iter 10 --n-init 5 --n-top 1 --n-valid 1 --contrast0 {a.contrast0} \\",
+              '  --workers "${WORKERS:-16}" --seed 1 --no-display \\',
+              '  --run-dir "${RUN:?}"']
+    for name, body in ((f"run_{a.tag}.sh", lines), (f"run_{a.tag}_smoke.sh", smoke)):
+        sh = os.path.join(night_dir, "klip_tpe", name)
+        with open(sh, "x") as fh:
+            fh.write("\n".join(body) + "\n")
+        os.chmod(sh, 0o755)
+    print(f"wrote {out}/, run_{a.tag}.sh and run_{a.tag}_smoke.sh in {os.path.join(night_dir, 'klip_tpe')}")
     return 0
 
 
