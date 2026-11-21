@@ -10,7 +10,7 @@ from astropy.io import fits
 TOOL = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools", "klip_tpe_inputs.py")
 
 
-def _night(root, night, n, n_by_cube=None, angles=None, off_cube=None):
+def _night(root, night, n, n_by_cube=None, angles=None, off_cube=None, nan_rows=None):
     """Write one side's port products for a night: a centered star in 300 px frames.
 
     Parameters
@@ -28,6 +28,9 @@ def _night(root, night, n, n_by_cube=None, angles=None, off_cube=None):
         ramp from -10 to 10.
     off_cube : int, optional
         Cube number whose frames have the star 30 px right of the center (a failed centering).
+    nan_rows : sequence of int, optional
+        For each frame k of every cube, the number of rows at the bottom set to NaN (the padding
+        past the detector's edge), as ``nan_rows[k]``; default none.
     """
     red = os.path.join(root, night, "reduced_py")
     os.makedirs(red)
@@ -42,7 +45,10 @@ def _night(root, night, n, n_by_cube=None, angles=None, off_cube=None):
         ang = np.linspace(-10, 10, k) if angles is None else np.asarray(angles[:k], dtype=float)
         for tag in ("", "_clean"):
             img = off if cn == off_cube else star
-            fits.PrimaryHDU(np.repeat(img[None], k, axis=0), h).writeto(os.path.join(red, f"{pre}_cube{cn}_align_cen{tag}_bin.fits"))
+            frames = np.repeat(img[None], k, axis=0)
+            for j in range(k if nan_rows is not None else 0):
+                frames[j, :nan_rows[j]] = np.nan
+            fits.PrimaryHDU(frames, h).writeto(os.path.join(red, f"{pre}_cube{cn}_align_cen{tag}_bin.fits"))
             fits.PrimaryHDU(ang).writeto(os.path.join(red, f"{pre}_angles{cn}{tag}_bin.fits"))
         fits.PrimaryHDU(star, h).writeto(os.path.join(red, f"{pre}_cube{cn}_align_cen_clean_median_PSF.fits"))
 
@@ -177,3 +183,55 @@ def test_star_offset_ignores_far_artifacts():
     empty[120, 113] = 0.2                                   # noise near the center, the bright thing at the edge
     off2, pk2, ratio2 = k.star_offset(empty)
     assert ratio2 < 0.5
+
+
+def test_frames_with_nan_in_the_cut_left_out(tmp_path):
+    """Science and reference frames with NaN padding inside the cut are left out and listed; a
+    narrower cut that stays finite keeps them; too few finite frames skips the partition."""
+    root = str(tmp_path)
+    rows = [0] * 12
+    rows[3], rows[5], rows[7] = 125, 111, 125           # NaN up to row 124 (110) reaches 15 px (1 px) into a 40 px half cut
+    _night(root, "Fake_20220522", 12, nan_rows=rows)
+    ref_rows = [125, 125, 0, 0, 0, 0, 0]
+    _night(root, "Fake_20220523", 7, angles=np.array([-50.0, -40.0, -30.0, 30.0, 40.0, 50.0, 60.0]), nan_rows=ref_rows)
+    r = subprocess.run([sys.executable, TOOL, root, "Fake_20220522", "--tag", "rdi", "--half", "40", "--psf-half", "10",
+                        "--ref", "Fake_20220523", "--ref-min-dpa", "15", "--min-frames", "5"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "left out 3 of 12 frame(s) with NaN" in r.stdout
+    d = os.path.join(root, "Fake_20220522", "klip_tpe", "inputs_rdi")
+    cube = fits.getdata(os.path.join(d, "Fake_20220522_left_cube1_all_c80.fits"))
+    ang = fits.getdata(os.path.join(d, "Fake_20220522_left_angles1_all.fits"))
+    ref = fits.getdata(os.path.join(d, "Fake_20220522_left_cube1_ref_c80.fits"))
+    assert cube.shape == (9, 80, 80) and np.all(np.isfinite(cube))
+    assert np.allclose(ang, np.delete(np.linspace(-10, 10, 12), [3, 5, 7]))
+    assert ref.shape == (5, 80, 80) and np.all(np.isfinite(ref))
+    m = json.load(open(os.path.join(d, "manifest.json")))
+    p = m["partitions"][0]
+    assert p["frames"] == 9 and p["dropped_nan"] == [3, 5, 7]
+    assert p["finite_half_px"] == {"min": 25, "p05": 25, "median": 40}  # 150 - 125 = 25 px; 150 - 111 = 39 px
+    det = p["ref_detail"][0]
+    assert (det["frames"], det["nan_within_cut"], det["used"]) == (7, 2, 5)
+    r2 = subprocess.run([sys.executable, TOOL, root, "Fake_20220522", "--tag", "adi20", "--half", "20", "--psf-half", "10",
+                         "--min-frames", "5"], capture_output=True, text=True)
+    assert r2.returncode == 0, r2.stderr
+    m2 = json.load(open(os.path.join(root, "Fake_20220522", "klip_tpe", "inputs_adi20", "manifest.json")))
+    assert m2["partitions"][0]["frames"] == 12 and m2["partitions"][0]["dropped_nan"] == []
+    assert m2["partitions"][0]["finite_half_px"]["min"] == 20                 # capped at the cut's own half-width
+    many = [125] * 5 + [0] * 7                                                # 7 finite frames, fewer than 10
+    _night(root, "Fake_20220524", 12, nan_rows=many)
+    r3 = subprocess.run([sys.executable, TOOL, root, "Fake_20220524", "--tag", "adi", "--half", "40", "--psf-half", "10"],
+                        capture_output=True, text=True)
+    assert r3.returncode == 1 and "fewer than --min-frames" in r3.stdout
+    assert not os.path.exists(os.path.join(root, "Fake_20220524", "klip_tpe", "inputs_adi"))
+
+
+def test_finite_half_counts_from_the_center():
+    """The largest finite centered square: no NaN gives the cut's half-width, a NaN row or column
+    limits it to its distance from the center."""
+    sys.path.insert(0, os.path.dirname(TOOL))
+    import klip_tpe_inputs as k
+    c = np.ones((4, 80, 80), dtype=np.float32)
+    c[1, 0] = np.nan                     # bottom row: 39.5 px from the center, half-width 39
+    c[2, :, 70] = np.nan                 # a column 30.5 px right of the center: 30
+    c[3, 41, 41] = np.inf                # 1.5 px from the center: 1
+    assert k.finite_half(c).tolist() == [40, 39, 30, 1]
