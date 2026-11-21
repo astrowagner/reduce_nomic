@@ -1,0 +1,175 @@
+{
+  "star": {
+    "name": "Vega",
+    "parallax_mas": 130.23,
+    "parallax_err_mas": 0.36,
+    "parallax_ref": "van Leeuwen (2007), Hipparcos new reduction; Vega is too bright for Gaia",
+    "mag": 0.0,
+    "mag_err": 0.05,
+    "mag_note": "Vega defines zero magnitude; the uncertainty allows for its mid-infrared excess"
+  },
+  "band": {
+    "name": "N′",
+    "range_um": [
+      9.8,
+      12.4
+    ],
+    "lambda_um": 11.1,
+    "aperture_m": 8.4,
+    "proxy": "W3",
+    "note": "contrastcurve_nomic.pro models the band as 9.8-12.4 um; the raw headers do not record the filter (NOMICLAM = -999)"
+  },
+  "sequence": {
+    "first": "F0V",
+    "last": "M7V"
+  },
+  "companions": {
+    "shade": [
+      "K0V",
+      "K7V"
+    ],
+    "shade_label": "K0V–K7V",
+    "lines": [
+      "M0V",
+      "M2V",
+      "M4V",
+      "M5V",
+      "M6V"
+    ]
+  },
+  "marks_au": [
+    0.5
+  ],
+  "min_pa_worst": 10,
+  "name": "vega_klip_tpe",
+  "title": "Vega: 5σ Limits on Stellar Companions at N′ from the Port and KLIP-TPE",
+  "curves": [
+    {
+      "id": "20210227_ktpe_adi",
+      "night": "Vega_20210227",
+      "date": "2021-02-27",
+      "side": "left",
+      "kind": "klip_tpe",
+      "optional": true,
+      "path": "Vega_20210227/klip_tpe/run_adi/contrast_curve.txt",
+      "folder": "klip_tpe/run_adi",
+      "method": "KLIP-TPE",
+      "short": "KLIP-TPE",
+      "cap": null,
+      "plot": true
+    },
+    {
+      "id": "20220515_ktpe_adi",
+      "night": "Vega_20220515",
+      "date": "2022-05-15",
+      "side": "left",
+      "kind": "klip_tpe",
+      "optional": true,
+      "path": "Vega_20220515/klip_tpe/run_adi/contrast_curve.txt",
+      "folder": "klip_tpe/run_adi",
+      "method": "KLIP-TPE",
+      "short": "KLIP-TPE",
+      "cap": null,
+      "plot": true
+    },
+    {
+      "id": "20220520_ktpe_adi",
+      "night": "Vega_20220520",
+      "date": "2022-05-20",
+      "side": "both",
+      "kind": "klip_tpe",
+      "optional": true,
+      "path": "Vega_20220520/klip_tpe/run_adi/contrast_curve.txt",
+      "folder": "klip_tpe/run_adi",
+      "method": "KLIP-TPE",
+      "short": "KLIP-TPE",
+      "cap": null,
+      "plot": true
+    },
+    {
+      "id": "20220521_ktpe_adi",
+      "night": "Vega_20220521",
+      "date": "2022-05-21",
+      "side": "both",
+      "kind": "klip_tpe",
+      "optional": true,
+      "path": "Vega_20220521/klip_tpe/run_adi/contrast_curve.txt",
+      "folder": "klip_tpe/run_adi",
+      "method": "KLIP-TPE",
+      "short": "KLIP-TPE",
+      "cap": null,
+      "plot": true
+    },
+    {
+      "id": "20220522_ktpe_adi",
+      "night": "Vega_20220522",
+      "date": "2022-05-22",
+      "side": "both",
+      "kind": "klip_tpe",
+      "optional": true,
+      "path": "Vega_20220522/klip_tpe/run_adi/contrast_curve.txt",
+      "folder": "klip_tpe/run_adi",
+      "method": "KLIP-TPE",
+      "short": "KLIP-TPE",
+      "cap": null,
+      "plot": true
+    },
+    {
+      "id": "20220612_ktpe_adi",
+      "night": "Vega_20220612",
+      "date": "2022-06-12",
+      "side": "both",
+      "kind": "klip_tpe",
+      "optional": true,
+      "path": "Vega_20220612/klip_tpe/run_adi/contrast_curve.txt",
+      "folder": "klip_tpe/run_adi",
+      "method": "KLIP-TPE",
+      "short": "KLIP-TPE",
+      "cap": null,
+      "plot": true
+    },
+    {
+      "id": "20210227_ktpe_rdi",
+      "night": "Vega_20210227",
+      "date": "2021-02-27",
+      "side": "left",
+      "kind": "klip_tpe",
+      "optional": true,
+      "path": "Vega_20210227/klip_tpe/run_rdi/contrast_curve.txt",
+      "folder": "klip_tpe/run_rdi",
+      "method": "KLIP-TPE RDI",
+      "short": "KLIP-TPE RDI",
+      "cap": null,
+      "plot": true
+    },
+    {
+      "id": "20220515_ktpe_rdi",
+      "night": "Vega_20220515",
+      "date": "2022-05-15",
+      "side": "left",
+      "kind": "klip_tpe",
+      "optional": true,
+      "path": "Vega_20220515/klip_tpe/run_rdi/contrast_curve.txt",
+      "folder": "klip_tpe/run_rdi",
+      "method": "KLIP-TPE RDI",
+      "short": "KLIP-TPE RDI",
+      "cap": null,
+      "plot": true
+    },
+    {
+      "id": "20220520_ktpe_rdi",
+      "night": "Vega_20220520",
+      "date": "2022-05-20",
+      "side": "both",
+      "kind": "klip_tpe",
+      "optional": true,
+      "path": "Vega_20220520/klip_tpe/run_rdi/contrast_curve.txt",
+      "folder": "klip_tpe/run_rdi",
+      "method": "KLIP-TPE RDI",
+      "short": "KLIP-TPE RDI",
+      "cap": null,
+      "plot": true
+    }
+  ],
+  "missing": []
+}

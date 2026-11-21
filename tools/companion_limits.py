@@ -6,7 +6,8 @@ usage: python tools/companion_limits.py SPEC --archive ROOT --out DIR [--no-plot
 (parallax, apparent magnitude in the band), the band, the dwarf-sequence range, the curves (paths
 relative to ``--archive``, one entry per curve with ``id``, ``night``, ``date``, ``side``,
 ``method``, ``cap``, ``plot`` and ``kind``: ``idl_sav`` (default; per position angle) or
-``klip_tpe`` (a KLIP-TPE ``contrast_curve.txt``, azimuthally combined, counted in both envelopes)), the companion types to mark, the projected separations to mark
+``klip_tpe`` (a KLIP-TPE ``contrast_curve.txt``, azimuthally combined, counted in both envelopes);
+``"optional": true`` leaves a missing file out instead of stopping), the companion types to mark, the projected separations to mark
 (``marks_au``) and ``min_pa_worst``, the fewest position angles a curve needs to count in the
 worst-position-angle envelope. Each curve's limits are summarized over position angle (median and
 worst), converted with ``reduce_nomic.companions`` to the limiting absolute N' magnitude, spectral
@@ -279,13 +280,15 @@ def plot(spec: dict, curves: Dict[str, cp.ContrastCurve], env: Dict[str, np.ndar
         cur = curves[c["id"]]
         s = cur.stats()
         n_pa = len(cur.pas)
-        well = n_pa >= int(spec.get("min_pa_worst", 10))
+        azim = c.get("kind") == "klip_tpe"
+        well = azim or n_pa >= int(spec.get("min_pa_worst", 10))
         ok = np.isfinite(s["median"])
-        lab = f"{c['date']} {c.get('short', c['method'].split(' (')[0])}, {n_pa} PA{'s' if n_pa != 1 else ''}"
+        lab = (f"{c['date']} {c.get('short', c['method'].split(' (')[0])}" +
+               (", Azimuthal" if azim else f", {n_pa} PA{'s' if n_pa != 1 else ''}"))
         ax.plot(cur.separations[ok], s["median"][ok], color=SLOTS[k], lw=2.0 if well else 1.4,
                 ls="-" if well else (0, (5, 2.5)), marker=MARKERS[k], ms=6 if well else 5,
                 mfc=SLOTS[k] if well else "white", mec=SLOTS[k], mew=1.4, label=lab, zorder=3)
-        if well:
+        if well and not azim:
             ax.fill_between(cur.separations[ok], s["median"][ok], s["worst"][ok], color=SLOTS[k],
                             alpha=0.14, lw=0, zorder=2)
     x05 = [float(cp.arcsec_of_au(a, par)) for a in spec.get("marks_au", [])]
@@ -453,6 +456,17 @@ def main(argv: Sequence[str]) -> int:
         spec = json.load(fh)
     seq = cp.dwarf_sequence(spec["sequence"]["first"], spec["sequence"]["last"])
     readers = {"idl_sav": cp.read_idl_curve, "klip_tpe": cp.read_klip_tpe_curve}
+    present = []
+    for c in spec["curves"]:
+        if os.path.exists(os.path.join(a.archive, c["path"])):
+            present.append(c)
+        elif c.get("optional"):
+            print(f"{c['id']}: {c['path']} not found; left out (optional)")
+        else:
+            raise SystemExit(f"{c['id']}: {c['path']} not found")
+    if not present:
+        raise SystemExit("no curves found")
+    spec = dict(spec, curves=present)
     curves = {c["id"]: readers[c.get("kind", "idl_sav")](os.path.join(a.archive, c["path"])) for c in spec["curves"]}
     os.makedirs(a.out, exist_ok=True)
     base = os.path.join(a.out, spec["name"])
