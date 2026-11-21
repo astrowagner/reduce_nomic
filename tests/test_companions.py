@@ -88,15 +88,33 @@ def test_lambda_over_d_and_au():
 
 
 def test_read_klip_tpe_curve(tmp_path):
-    """The first block of two-column rows of a KLIP-TPE contrast_curve.txt is the curve."""
-    p = tmp_path / "contrast_curve.txt"
-    p.write_text("# Injection-calibrated SNR=5 contrast curve (validated winners per annulus)\n"
-                 "# separation_arcsec   contrast_snr5\n"
-                 "     0.400     2.0000E-03\n     0.300     4.0000E-03\n     0.500     1.0000E-03\n"
-                 "# per-sample 5*contrast/SNR points (validation injections):\n"
-                 "#   sep(\")    5sig_contrast_sample   annulus\n"
-                 "     0.310     3.9000E-03     1\n")
-    c = cp.read_klip_tpe_curve(str(p))
+    """The injection-recovery section is read whichever order the sections come in."""
+    run = tmp_path / "contrast_curve.txt"            # a run's file: curve, seams, samples, KLIP-FM
+    run.write_text("# Final-image injection-recovery SNR=5 contrast curve (one injection per reduction)\n"
+                   "# klip_tpe 0.1.0 -- 2026-11-20T21:05:26\n"
+                   "# separation_arcsec   contrast_snr5\n"
+                   "     0.400     2.0000E-03\n     0.300     4.0000E-03\n     0.500     1.0000E-03\n"
+                   "# seam, annulus 1: inner - (edge of the stitch), outer 0.30 (seam)\n"
+                   "# per-sample 5*contrast/SNR points (validation injections):\n"
+                   "#   sep(\")    5sig_contrast_sample   annulus\n"
+                   "     0.310     3.9000E-03     1\n"
+                   "# KLIP-FM cross-check 5-sigma contrast (clean forward-model pass)\n"
+                   "# sep_arcsec   contrast_5sig\n"
+                   "    0.3367     1.0886E+00\n    0.3931     2.6524E-01\n")
+    c = cp.read_klip_tpe_curve(str(run))
     assert list(c.separations) == [0.3, 0.4, 0.5]
     assert np.allclose(c.contrast[0], [4e-3, 2e-3, 1e-3])
     assert c.sigma == 5.0 and c.contrast.shape == (1, 3)
+    fm = cp.read_klip_tpe_curve(str(run), section="klip_fm")
+    assert np.allclose(fm.separations, [0.3367, 0.3931]) and np.allclose(fm.contrast[0], [1.0886, 0.26524])
+    ann = tmp_path / "annulus_contrast_curve.txt"    # a smoke run's annulus file: KLIP-FM first
+    ann.write_text("# KLIP-FM cross-check 5-sigma contrast  (annulus 1, clean forward-model pass)\n"
+                   "# sep_arcsec   contrast_5sig\n"
+                   "    0.3367     9.0000e-01\n"
+                   "# annulus 1 injection-recovery 5-sigma contrast  (contrast_inj=1.000e-01)\n"
+                   "# sep_arcsec   contrast_5sig\n"
+                   "    0.2864     1.2161e-01\n    0.3043     1.4240e-01\n")
+    a = cp.read_klip_tpe_curve(str(ann))
+    assert np.allclose(a.separations, [0.2864, 0.3043]) and np.allclose(a.contrast[0], [0.12161, 0.14240])
+    with pytest.raises(ValueError):
+        cp.read_klip_tpe_curve(str(ann), section="other")

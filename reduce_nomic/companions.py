@@ -27,7 +27,7 @@ import csv
 import os
 import re
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -436,50 +436,80 @@ def read_idl_curve(path: str) -> ContrastCurve:
     return ContrastCurve(separations=seps, contrast=c[rows], pas=pas, sigma=sigma, source=path)
 
 
-def read_klip_tpe_curve(path: str) -> ContrastCurve:
-    """Read a KLIP-TPE run's ``contrast_curve.txt`` (or an annulus's).
-
-    KLIP-TPE writes injection-calibrated 5σ (SNR = 5) contrasts, azimuthally combined, as rows of
-    ``separation_arcsec contrast`` after ``#`` comment lines; a run-level file then lists the
-    per-sample validation points and possibly a ``# KLIP-FM`` cross-check section, both after
-    further comment lines. Only the first block of two-column rows is read.
+def klip_tpe_sections(path: str) -> List[Tuple[str, List[List[str]]]]:
+    """Split a KLIP-TPE ``contrast_curve.txt`` into its sections.
 
     Parameters
     ----------
     path : str
-        The ``contrast_curve.txt`` file.
+        A run's or an annulus's ``contrast_curve.txt``.
 
     Returns
     -------
-    curve : ContrastCurve
-        One row of limits (``pas`` = [NaN]: the curve is not per position angle), sigma 5.
+    sections : list of (str, list of list of str)
+        For each block of data rows, in file order: the text of the ``#`` comment lines before
+        it (joined with spaces, without the ``#``) and its rows split on whitespace.
     """
-    seps, vals = [], []
-    started = False
+    sections: List[Tuple[str, List[List[str]]]] = []
+    title: List[str] = []
+    rows: List[List[str]] = []
     with open(path) as fh:
         for ln in fh:
             t = ln.strip()
             if not t:
                 continue
             if t.startswith("#"):
-                if started:
-                    break
-                continue
-            parts = t.split()
-            if len(parts) != 2:
-                if started:
-                    break
-                continue
-            seps.append(float(parts[0]))
-            vals.append(float(parts[1]))
-            started = True
-    if not seps:
-        raise ValueError(f"no curve rows in {path}")
-    seps = np.asarray(seps)
-    vals = np.asarray(vals)
-    o = np.argsort(seps, kind="stable")
-    c = np.where(vals[o] > 0, vals[o], np.nan)[None, :]
-    return ContrastCurve(separations=seps[o], contrast=c, pas=np.array([np.nan]), sigma=5.0, source=path)
+                if rows:
+                    sections.append((" ".join(title), rows))
+                    title, rows = [], []
+                title.append(t.lstrip("#").strip())
+            else:
+                rows.append(t.split())
+    if rows:
+        sections.append((" ".join(title), rows))
+    return sections
+
+
+def read_klip_tpe_curve(path: str, section: str = "injection") -> ContrastCurve:
+    """Read a KLIP-TPE run's ``contrast_curve.txt`` (or an annulus's).
+
+    KLIP-TPE writes several sections, each a block of ``#`` comment lines and then rows: the
+    injection-recovery 5σ (SNR = 5) contrast curve, azimuthally combined (``separation_arcsec
+    contrast``), the per-sample validation points (three columns) and a KLIP-FM cross-check
+    (two columns). Their order differs between a run's file and an annulus's, so the section is
+    found by its comment lines (``klip_tpe_sections``).
+
+    Parameters
+    ----------
+    path : str
+        The ``contrast_curve.txt`` file.
+    section : {"injection", "klip_fm"}, default "injection"
+        ``injection`` reads the first section whose comment lines mention an injection and are
+        neither the per-sample points nor the KLIP-FM cross-check; ``klip_fm`` reads the KLIP-FM
+        cross-check.
+
+    Returns
+    -------
+    curve : ContrastCurve
+        One row of limits (``pas`` = [NaN]: the curve is not per position angle), sigma 5.
+    """
+    if section not in ("injection", "klip_fm"):
+        raise ValueError(f"section must be 'injection' or 'klip_fm', not {section!r}")
+    for title, rows in klip_tpe_sections(path):
+        low = title.lower()
+        if section == "injection":
+            ok = "injection" in low and "klip-fm" not in low and "per-sample" not in low
+        else:
+            ok = "klip-fm" in low
+        pairs = [(float(r[0]), float(r[1])) for r in rows if len(r) == 2]
+        if not ok or not pairs:
+            continue
+        seps = np.array([p[0] for p in pairs])
+        vals = np.array([p[1] for p in pairs])
+        o = np.argsort(seps, kind="stable")
+        c = np.where(vals[o] > 0, vals[o], np.nan)[None, :]
+        return ContrastCurve(separations=seps[o], contrast=c, pas=np.array([np.nan]), sigma=5.0, source=path)
+    raise ValueError(f"no {section} curve section in {path}")
 
 
 def companion_limits(contrast: np.ndarray, star_mag: float, parallax_mas: float,
