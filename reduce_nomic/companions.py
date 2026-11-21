@@ -436,6 +436,52 @@ def read_idl_curve(path: str) -> ContrastCurve:
     return ContrastCurve(separations=seps, contrast=c[rows], pas=pas, sigma=sigma, source=path)
 
 
+def read_klip_tpe_curve(path: str) -> ContrastCurve:
+    """Read a KLIP-TPE run's ``contrast_curve.txt`` (or an annulus's).
+
+    KLIP-TPE writes injection-calibrated 5σ (SNR = 5) contrasts, azimuthally combined, as rows of
+    ``separation_arcsec contrast`` after ``#`` comment lines; a run-level file then lists the
+    per-sample validation points and possibly a ``# KLIP-FM`` cross-check section, both after
+    further comment lines. Only the first block of two-column rows is read.
+
+    Parameters
+    ----------
+    path : str
+        The ``contrast_curve.txt`` file.
+
+    Returns
+    -------
+    curve : ContrastCurve
+        One row of limits (``pas`` = [NaN]: the curve is not per position angle), sigma 5.
+    """
+    seps, vals = [], []
+    started = False
+    with open(path) as fh:
+        for ln in fh:
+            t = ln.strip()
+            if not t:
+                continue
+            if t.startswith("#"):
+                if started:
+                    break
+                continue
+            parts = t.split()
+            if len(parts) != 2:
+                if started:
+                    break
+                continue
+            seps.append(float(parts[0]))
+            vals.append(float(parts[1]))
+            started = True
+    if not seps:
+        raise ValueError(f"no curve rows in {path}")
+    seps = np.asarray(seps)
+    vals = np.asarray(vals)
+    o = np.argsort(seps, kind="stable")
+    c = np.where(vals[o] > 0, vals[o], np.nan)[None, :]
+    return ContrastCurve(separations=seps[o], contrast=c, pas=np.array([np.nan]), sigma=5.0, source=path)
+
+
 def companion_limits(contrast: np.ndarray, star_mag: float, parallax_mas: float,
                      seq: DwarfSequence) -> Dict[str, np.ndarray]:
     """Convert contrast limits to limits on main-sequence companions.

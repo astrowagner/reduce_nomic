@@ -5,7 +5,8 @@ usage: python tools/companion_limits.py SPEC --archive ROOT --out DIR [--no-plot
 ``SPEC`` is a JSON file (example: ``config/companion_limits/vega_idl.json``) giving the star
 (parallax, apparent magnitude in the band), the band, the dwarf-sequence range, the curves (paths
 relative to ``--archive``, one entry per curve with ``id``, ``night``, ``date``, ``side``,
-``method``, ``cap`` and ``plot``), the companion types to mark, the projected separations to mark
+``method``, ``cap``, ``plot`` and ``kind``: ``idl_sav`` (default; per position angle) or
+``klip_tpe`` (a KLIP-TPE ``contrast_curve.txt``, azimuthally combined, counted in both envelopes)), the companion types to mark, the projected separations to mark
 (``marks_au``) and ``min_pa_worst``, the fewest position angles a curve needs to count in the
 worst-position-angle envelope. Each curve's limits are summarized over position angle (median and
 worst), converted with ``reduce_nomic.companions`` to the limiting absolute N' magnitude, spectral
@@ -134,7 +135,7 @@ def envelopes(spec: dict, curves: Dict[str, cp.ContrastCurve]) -> Dict[str, np.n
     grid, m, mf = cp.best_envelope(med)
     nmin = int(spec.get("min_pa_worst", 10))
     wor = {c["id"]: (curves[c["id"]].separations, curves[c["id"]].stats()["worst"])
-           for c in spec["curves"] if len(curves[c["id"]].pas) >= nmin}
+           for c in spec["curves"] if len(curves[c["id"]].pas) >= nmin or c.get("kind") == "klip_tpe"}
     _, w, wf = cp.best_envelope(wor, grid) if wor else (grid, np.full(len(grid), np.nan), np.array([""] * len(grid)))
     return {"grid": grid, "median": m, "median_from": mf, "worst": w, "worst_from": wf}
 
@@ -451,7 +452,8 @@ def main(argv: Sequence[str]) -> int:
     with open(a.spec) as fh:
         spec = json.load(fh)
     seq = cp.dwarf_sequence(spec["sequence"]["first"], spec["sequence"]["last"])
-    curves = {c["id"]: cp.read_idl_curve(os.path.join(a.archive, c["path"])) for c in spec["curves"]}
+    readers = {"idl_sav": cp.read_idl_curve, "klip_tpe": cp.read_klip_tpe_curve}
+    curves = {c["id"]: readers[c.get("kind", "idl_sav")](os.path.join(a.archive, c["path"])) for c in spec["curves"]}
     os.makedirs(a.out, exist_ok=True)
     base = os.path.join(a.out, spec["name"])
     write_csv(base + "_per_curve.csv", per_curve_rows(spec, curves, seq))

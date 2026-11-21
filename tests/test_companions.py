@@ -85,3 +85,18 @@ def test_lambda_over_d_and_au():
     assert cp.lambda_over_d_arcsec(11.1, 8.4) == pytest.approx(0.2726, abs=1e-4)
     assert cp.arcsec_of_au(0.5, 130.23) == pytest.approx(0.0651, abs=1e-4)
     assert cp.projected_au(cp.arcsec_of_au(3.0, 130.23), 130.23) == pytest.approx(3.0)
+
+
+def test_read_klip_tpe_curve(tmp_path):
+    """The first block of two-column rows of a KLIP-TPE contrast_curve.txt is the curve."""
+    p = tmp_path / "contrast_curve.txt"
+    p.write_text("# Injection-calibrated SNR=5 contrast curve (validated winners per annulus)\n"
+                 "# separation_arcsec   contrast_snr5\n"
+                 "     0.400     2.0000E-03\n     0.300     4.0000E-03\n     0.500     1.0000E-03\n"
+                 "# per-sample 5*contrast/SNR points (validation injections):\n"
+                 "#   sep(\")    5sig_contrast_sample   annulus\n"
+                 "     0.310     3.9000E-03     1\n")
+    c = cp.read_klip_tpe_curve(str(p))
+    assert list(c.separations) == [0.3, 0.4, 0.5]
+    assert np.allclose(c.contrast[0], [4e-3, 2e-3, 1e-3])
+    assert c.sigma == 5.0 and c.contrast.shape == (1, 3)
