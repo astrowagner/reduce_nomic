@@ -173,3 +173,40 @@ def test_a_linked_run_links_every_evaluation_and_extends_only_with_the_same_link
     more = linked_values(run)
     assert len(more) > len(rows)
     assert all(a == b for a, b in more)
+
+
+def test_bin_unlinked_with_a_higher_top_across_partitions_of_unequal_length(tmp_path):
+    """Without bin in --link each partition draws its own bin, up to --bin-max; the other links hold."""
+    data = write_synthetic(str(tmp_path))
+    # shorten partition B to 24 frames, as Procyon_3 (164) beside Procyon_4 (388)
+    ib = data.index("--cube") + 2
+    short = str(tmp_path / "cube_B_short.fits")
+    fits.PrimaryHDU(fits.getdata(data[ib])[:24]).writeto(short)
+    data[ib] = short
+    ia = data.index("--angles") + 2
+    short_a = str(tmp_path / "angles_B_short.fits")
+    fits.PrimaryHDU(fits.getdata(data[ia])[:24]).writeto(short_a)
+    data[ia] = short_a
+    run = str(tmp_path / "run_unlinked")
+    quick = ["--contrast-grid", "off", "--final-grid", "off", "--no-param-verify", "--no-fm-curve",
+             "--no-fm-preview"]
+    link = ["filter", "angsep", "anglemax"]
+    r = run_wrapper(["--link"] + link + ["--", "generic"] + data + ["--bin-max", "5"]
+                    + ["--ann-edges", "6", "20", "--n-iter", "24", "--n-init", "16", "--n-top", "1",
+                       "--n-valid", "1", "--n-remeasure", "1", "--contrast0", "1e-2", "--use-contrast", "5e-2",
+                       "--workers", "2", "--seed", "2", "--no-display", "--run-dir", run] + quick, tmp_path)
+    assert r.returncode == 0, r.stdout[-3000:] + r.stderr[-3000:]
+    with open(os.path.join(run, "run_setup.txt")) as fh:
+        setup = fh.read()
+    assert "link_params        : ['filter', 'angsep', 'anglemax']" in setup
+    bins, tied = [], []
+    with open(os.path.join(run, "results.jsonl")) as fh:
+        for line in fh:
+            pp = json.loads(line)["config"]["per_partition"]
+            bins.append((pp["A"]["bin"], pp["B"]["bin"]))
+            tied.append(tuple(pp["A"][b] == pp["B"][b] for b in link))
+    assert len(bins) >= 24
+    assert all(all(t) for t in tied)                                   # filter, angsep, anglemax still one value
+    assert any(a != b for a, b in bins)                                # bin is each partition's own
+    assert max(max(a, b) for a, b in bins) > 3                         # above 24 / 8, the default top
+    assert max(max(a, b) for a, b in bins) <= 5                        # and no higher than --bin-max

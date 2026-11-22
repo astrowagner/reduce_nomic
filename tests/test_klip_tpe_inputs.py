@@ -472,3 +472,27 @@ def test_several_nights_joined_into_one_run(tmp_path):
     man = json.load(open(os.path.join(root, "Fake_20220101", "klip_tpe", "inputs_one", "manifest.json")))
     assert man["night"] == "Fake_20220101" and man["labels"] is None
     assert [p["name"] for p in man["partitions"]] == ["left_A", "left_B"]
+
+
+def test_bin_max_written_into_the_three_scripts_and_checked(tmp_path):
+    """--bin-max N reaches the run, smoke and resume scripts and the manifest; without it none has it."""
+    root = str(tmp_path)
+    _night(root, "Fake_20220101", 10)
+    base = [sys.executable, TOOL, root, "Fake_20220101", "--half", "40", "--psf-half", "10"]
+    kt = os.path.join(root, "Fake_20220101", "klip_tpe")
+    r = subprocess.run(base + ["--tag", "bm", "--bin-max", "48", "--link", "filter", "angsep", "anglemax"],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    for name in ("run_bm.sh", "run_bm_smoke.sh", "resume_bm.sh"):
+        sh = open(os.path.join(kt, name)).read()
+        assert "  --pxscale 0.0179 --lam 11.1e-6 --diam 8.4 --bin-max 48 \\" in sh, name
+        assert "--link filter angsep anglemax --" in sh, name
+    man = json.load(open(os.path.join(kt, "inputs_bm", "manifest.json")))
+    assert man["bin_max"] == 48 and man["link"]["bases"] == ["filter", "angsep", "anglemax"]
+    r = subprocess.run(base + ["--tag", "nobm"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "--bin-max" not in open(os.path.join(kt, "run_nobm.sh")).read()
+    assert json.load(open(os.path.join(kt, "inputs_nobm", "manifest.json")))["bin_max"] is None
+    r = subprocess.run(base + ["--tag", "bad", "--bin-max", "0"], capture_output=True, text=True)
+    assert r.returncode != 0 and "--bin-max" in r.stderr
+    assert not os.path.exists(os.path.join(kt, "inputs_bad"))

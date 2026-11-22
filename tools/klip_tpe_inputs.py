@@ -6,6 +6,7 @@ usage: python tools/klip_tpe_inputs.py ARCHIVE NIGHT [NIGHT ...] --tag TAG [--ou
        [--psf-half 30] [--product all|clean] [--ref NIGHT ...] [--ann-edges 11 34 67]
        [--n-iter 400 400] [--n-init 60 60] [--n-remeasure 3] [--contrast0 1e-3] [--workers auto]
        [--use-contrast C ...] [--keep-nan] [--min-coverage F] [--link BASE ...] [--batch N]
+       [--bin-max N]
 
 KLIP-TPE's generic adapter (``klip-tpe generic``) takes one registered cube, its derotation angles
 and a PSF template per partition, and optionally a reference cube (RDI). For each side and chop of
@@ -144,6 +145,14 @@ NIGHT : str, one or more
     so one at a time leaves most of a large machine and its GPU idle. TPE then proposes from a
     posterior up to that many trials old, which changes the search's trajectory. Written into both
     scripts and recorded in the manifest (``batch``, 1 without it).
+--bin-max : int, optional
+    Top of the searched temporal bin, frames per bin (KLIP-TPE's ``--bin-max``). KLIP-TPE's generic
+    adapter otherwise takes ``nframes / 8`` of the partition with the fewest frames, for every
+    partition: joining Procyon_3 (164 frames) and Procyon_4 (388) tops both at 20. A bin larger
+    than a partition's ``nframes / 8`` leaves it fewer than 8 bins where its parallactic angle
+    moves slowly; the angle-aware binning still closes a bin once a source would move half a FWHM
+    at the annulus' outer edge. Written into the three scripts and recorded in the manifest
+    (``bin_max``, None without it).
 
 Returns
 -------
@@ -160,8 +169,8 @@ inputs_<TAG>/ : files
     (``dropped_off_center``: index in the binned cube and offset in pixels), the reference frames
     with NaN (``nan_within_cut`` per reference night, left out unless ``nan_kept``) or with the
     star off the center (``off_center``), the skipped partitions, the fixed injection contrasts
-    (``use_contrast``, None when every annulus calibrates), ``keep_nan``, ``min_coverage``, ``link``
-    and ``batch``, the science nights (``nights``, with ``labels``; ``night`` is FOLDER), and per
+    (``use_contrast``, None when every annulus calibrates), ``keep_nan``, ``min_coverage``, ``link``,
+    ``batch`` and ``bin_max``, the science nights (``nights``, with ``labels``; ``night`` is FOLDER), and per
     partition its night and the frames kept with NaN within the cut (``frames_with_nan``) and the
     cut's NaN fraction (``nan_fraction``)); with ``--link`` also ``klip_tpe_linked.py``.
 run_<TAG>.sh, run_<TAG>_smoke.sh, resume_<TAG>.sh : file
@@ -409,9 +418,13 @@ def main(argv: Sequence[str]) -> int:
     ap.add_argument("--min-coverage", type=float, default=None)
     ap.add_argument("--link", nargs="+", default=None)
     ap.add_argument("--batch", type=int, default=None)
+    ap.add_argument("--bin-max", type=int, default=None)
     a = ap.parse_args(argv)
     if a.batch is not None and a.batch < 1:
         ap.error("--batch is a number of trials, at least 1")
+    if a.bin_max is not None and a.bin_max < 1:
+        ap.error("--bin-max is a number of frames per bin, at least 1")
+    space_opts = f" --bin-max {a.bin_max}" if a.bin_max is not None else ""
     if a.min_coverage is not None and not (np.isfinite(a.min_coverage) and 0.0 <= a.min_coverage <= 1.0):
         ap.error("--min-coverage is a fraction of the frames, from 0 to 1")
     link: Optional[List[str]] = None
@@ -469,6 +482,7 @@ def main(argv: Sequence[str]) -> int:
                       "psf_half": a.psf_half, "ref_nights": a.ref, "min_frames": a.min_frames,
                       "use_contrast": use_contrast, "keep_nan": bool(a.keep_nan),
                       "min_coverage": a.min_coverage, "link": None, "batch": int(a.batch or 1),
+                      "bin_max": a.bin_max,
                       "partitions": [], "skipped": []}
     cubes: List[str] = []
     angles: List[str] = []
@@ -675,7 +689,7 @@ def main(argv: Sequence[str]) -> int:
     if refs:
         data_args.append("  --ref-cube " + " ".join(q(x) for x in refs) + " \\")
     data_args += ["  --names " + " ".join(names) + " \\",
-                  "  --pxscale 0.0179 --lam 11.1e-6 --diam 8.4 \\"]
+                  f"  --pxscale 0.0179 --lam 11.1e-6 --diam 8.4{space_opts} \\"]
     preamble = ["#!/usr/bin/env bash",
                 f"# KLIP-TPE generic run for {title} ({a.tag}); made by reduce_nomic tools/klip_tpe_inputs.py",
                 "set -euo pipefail",
@@ -693,7 +707,7 @@ def main(argv: Sequence[str]) -> int:
     resume[1] = (f"# Resume the KLIP-TPE generic run for {title} ({a.tag}) from its checkpoint, which holds the "
                  f"search's configuration; made by reduce_nomic tools/klip_tpe_inputs.py")
     lines += ["  --names " + " ".join(names) + " \\",
-              "  --pxscale 0.0179 --lam 11.1e-6 --diam 8.4 \\",
+              f"  --pxscale 0.0179 --lam 11.1e-6 --diam 8.4{space_opts} \\",
               f"  --ann-edges {' '.join(a.ann_edges)} --n-iter {' '.join(a.n_iter)} --n-init {' '.join(a.n_init)} \\",
               f"  --n-remeasure {a.n_remeasure} --n-top 6 --n-valid 8 --contrast0 {a.contrast0}{extra_opts} \\",
               f'  --workers "${{WORKERS:-{a.workers}}}" --seed 1 --verify {display} \\',
@@ -702,7 +716,7 @@ def main(argv: Sequence[str]) -> int:
     smoke = [ln.replace(f"RUN={q(run_dir)}", f"RUN={q(smoke_dir)}") for ln in head]
     smoke[1] = f"# KLIP-TPE smoke test for {title} ({a.tag}): 10 evaluations on the first annulus; its numbers mean nothing"
     smoke += ["  --names " + " ".join(names) + " \\",
-              "  --pxscale 0.0179 --lam 11.1e-6 --diam 8.4 \\",
+              f"  --pxscale 0.0179 --lam 11.1e-6 --diam 8.4{space_opts} \\",
               f"  --ann-edges {' '.join(a.ann_edges[:2])} --n-iter 10 --n-init 5 --n-top 1 --n-valid 1 --contrast0 {a.contrast0}{extra_opts} \\",
               f'  --workers "${{WORKERS:-16}}" --seed 1 {display} \\',
               '  --run-dir "${RUN:?}" "$@"']
