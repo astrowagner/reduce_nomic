@@ -4,7 +4,7 @@ usage: python tools/klip_tpe_inputs.py ARCHIVE NIGHT --tag TAG [--sides left rig
        [--command-archive PATH] [--min-frames 10] [--display show|none] [--ref-min-dpa DEG]
        [--psf-half 30] [--product all|clean] [--ref NIGHT ...] [--ann-edges 11 34 67]
        [--n-iter 400 400] [--n-init 60 60] [--n-remeasure 3] [--contrast0 1e-3] [--workers auto]
-       [--use-contrast C ...] [--keep-nan] [--min-coverage F] [--link BASE ...]
+       [--use-contrast C ...] [--keep-nan] [--min-coverage F] [--link BASE ...] [--batch N]
 
 KLIP-TPE's generic adapter (``klip-tpe generic``) takes one registered cube, its derotation angles
 and a PSF template per partition, and optionally a reference cube (RDI). For each side and chop of
@@ -126,6 +126,13 @@ NIGHT : str
     scripts then run the command through ``klip_tpe_linked.py`` (its docstring says how), and the
     manifest records the bases, the wrapper's path and its SHA-256 (``link``, None without
     ``--link``).
+--batch : int, optional
+    Trials in flight at once (KLIP-TPE's ``--batch``, which keeps that many trials going and asks
+    each new proposal from the history as the oldest trial comes in); without it one trial runs at a
+    time. A trial has only a few jobs, one per injected draw and chop (Procyon_4's adi3ann4: 3 to 6),
+    so one at a time leaves most of a large machine and its GPU idle. TPE then proposes from a
+    posterior up to that many trials old, which changes the search's trajectory. Written into both
+    scripts and recorded in the manifest (``batch``, 1 without it).
 
 Returns
 -------
@@ -141,8 +148,8 @@ inputs_<TAG>/ : files
     (``dropped_off_center``: index in the binned cube and offset in pixels), the reference frames
     with NaN (``nan_within_cut`` per reference night, left out unless ``nan_kept``) or with the
     star off the center (``off_center``), the skipped partitions, the fixed injection contrasts
-    (``use_contrast``, None when every annulus calibrates), ``keep_nan``, ``min_coverage`` and
-    ``link``, and per partition the frames kept with NaN within the cut (``frames_with_nan``) and
+    (``use_contrast``, None when every annulus calibrates), ``keep_nan``, ``min_coverage``, ``link``
+    and ``batch``, and per partition the frames kept with NaN within the cut (``frames_with_nan``) and
     the cut's NaN fraction (``nan_fraction``)); with ``--link`` also ``klip_tpe_linked.py``.
 run_<TAG>.sh, run_<TAG>_smoke.sh, resume_<TAG>.sh : file
     The run, its smoke test and its resume, for Kevin to check and run.
@@ -386,7 +393,10 @@ def main(argv: Sequence[str]) -> int:
     ap.add_argument("--keep-nan", action="store_true")
     ap.add_argument("--min-coverage", type=float, default=None)
     ap.add_argument("--link", nargs="+", default=None)
+    ap.add_argument("--batch", type=int, default=None)
     a = ap.parse_args(argv)
+    if a.batch is not None and a.batch < 1:
+        ap.error("--batch is a number of trials, at least 1")
     if a.min_coverage is not None and not (np.isfinite(a.min_coverage) and 0.0 <= a.min_coverage <= 1.0):
         ap.error("--min-coverage is a fraction of the frames, from 0 to 1")
     link: Optional[List[str]] = None
@@ -409,6 +419,8 @@ def main(argv: Sequence[str]) -> int:
     extra_opts = f" --use-contrast {' '.join(a.use_contrast)}" if a.use_contrast else ""
     if a.min_coverage is not None:
         extra_opts += f" --min-coverage {a.min_coverage:g}"
+    if a.batch is not None and a.batch > 1:
+        extra_opts += f" --batch {a.batch}"
     display = "--show" if a.display == "show" else "--no-display"
     night_dir = os.path.join(a.archive, a.night)
     red = os.path.join(night_dir, "reduced_py")
@@ -419,7 +431,8 @@ def main(argv: Sequence[str]) -> int:
     manifest: Dict = {"night": a.night, "tag": a.tag, "product": a.product, "half": a.half,
                       "psf_half": a.psf_half, "ref_nights": a.ref, "min_frames": a.min_frames,
                       "use_contrast": use_contrast, "keep_nan": bool(a.keep_nan),
-                      "min_coverage": a.min_coverage, "link": None, "partitions": [], "skipped": []}
+                      "min_coverage": a.min_coverage, "link": None, "batch": int(a.batch or 1),
+                      "partitions": [], "skipped": []}
     cubes: List[str] = []
     angles: List[str] = []
     psfs: List[str] = []

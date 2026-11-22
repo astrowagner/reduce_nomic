@@ -399,3 +399,26 @@ def test_resume_script_repeats_the_data_arguments_and_link_runs_the_wrapper(tmp_
     r = subprocess.run(base + ["--tag", "bad", "--link", "bin;rm"], capture_output=True, text=True)
     assert r.returncode != 0 and "--link takes parameter names" in r.stderr
     assert not os.path.exists(os.path.join(kt, "inputs_bad"))
+
+
+def test_batch_written_into_both_scripts_and_checked(tmp_path):
+    """--batch N reaches the run and smoke scripts and the manifest; without it neither script has it."""
+    root = str(tmp_path)
+    _night(root, "Fake_20220101", 10)
+    base = [sys.executable, TOOL, root, "Fake_20220101", "--half", "40", "--psf-half", "10"]
+    kt = os.path.join(root, "Fake_20220101", "klip_tpe")
+    r = subprocess.run(base + ["--tag", "b16", "--use-contrast", "5e-4", "--batch", "16"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    sh = open(os.path.join(kt, "run_b16.sh")).read()
+    assert "--contrast0 1e-3 --use-contrast 5e-4 --batch 16 \\" in sh
+    assert "--batch 16" in open(os.path.join(kt, "run_b16_smoke.sh")).read()
+    assert "--batch" not in open(os.path.join(kt, "resume_b16.sh")).read()       # the checkpoint holds it
+    assert json.load(open(os.path.join(kt, "inputs_b16", "manifest.json")))["batch"] == 16
+    r = subprocess.run(base + ["--tag", "b1"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "--batch" not in open(os.path.join(kt, "run_b1.sh")).read()
+    assert json.load(open(os.path.join(kt, "inputs_b1", "manifest.json")))["batch"] == 1
+    for bad in ("0", "-2"):
+        r = subprocess.run(base + ["--tag", "bad", "--batch", bad], capture_output=True, text=True)
+        assert r.returncode != 0 and "--batch" in r.stderr
+        assert not os.path.exists(os.path.join(kt, "inputs_bad"))
