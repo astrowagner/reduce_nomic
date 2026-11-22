@@ -496,3 +496,33 @@ def test_bin_max_written_into_the_three_scripts_and_checked(tmp_path):
     r = subprocess.run(base + ["--tag", "bad", "--bin-max", "0"], capture_output=True, text=True)
     assert r.returncode != 0 and "--bin-max" in r.stderr
     assert not os.path.exists(os.path.join(kt, "inputs_bad"))
+
+
+def test_max_drop_in_the_start_scripts_and_weighting_in_all_three(tmp_path):
+    """--max-drop reaches the run and smoke scripts (KLIP-TPE reads it at the start); --weighting all three."""
+    root = str(tmp_path)
+    _night(root, "Fake_20220101", 10)
+    base = [sys.executable, TOOL, root, "Fake_20220101", "--half", "40", "--psf-half", "10"]
+    kt = os.path.join(root, "Fake_20220101", "klip_tpe")
+    r = subprocess.run(base + ["--tag", "mw", "--max-drop", "3", "--weighting", "sqrt_texp", "--bin-max", "48"],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    for name in ("run_mw.sh", "run_mw_smoke.sh"):
+        sh = open(os.path.join(kt, name)).read()
+        assert " --max-drop 3 \\" in sh, name
+        assert "--diam 8.4 --bin-max 48 --weighting sqrt_texp \\" in sh, name
+    resume = open(os.path.join(kt, "resume_mw.sh")).read()
+    assert "--max-drop" not in resume                                   # resume refuses a start option
+    assert "--diam 8.4 --bin-max 48 --weighting sqrt_texp \\" in resume  # the reducer is rebuilt from these
+    man = json.load(open(os.path.join(kt, "inputs_mw", "manifest.json")))
+    assert man["max_drop"] == 3 and man["weighting"] == "sqrt_texp" and man["bin_max"] == 48
+    r = subprocess.run(base + ["--tag", "plain"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    sh = open(os.path.join(kt, "run_plain.sh")).read()
+    assert "--max-drop" not in sh and "--weighting" not in sh
+    man = json.load(open(os.path.join(kt, "inputs_plain", "manifest.json")))
+    assert man["max_drop"] is None and man["weighting"] is None
+    for bad in (["--max-drop", "-1"], ["--weighting", "inverse"]):
+        r = subprocess.run(base + ["--tag", "bad"] + bad, capture_output=True, text=True)
+        assert r.returncode != 0
+        assert not os.path.exists(os.path.join(kt, "inputs_bad"))

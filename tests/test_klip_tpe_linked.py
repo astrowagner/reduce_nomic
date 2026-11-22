@@ -210,3 +210,26 @@ def test_bin_unlinked_with_a_higher_top_across_partitions_of_unequal_length(tmp_
     assert any(a != b for a, b in bins)                                # bin is each partition's own
     assert max(max(a, b) for a, b in bins) > 3                         # above 24 / 8, the default top
     assert max(max(a, b) for a, b in bins) <= 5                        # and no higher than --bin-max
+
+
+def test_max_drop_and_weighting_reach_the_run(tmp_path):
+    """A run started with --max-drop 1 and --weighting sqrt_texp records both and selects one partition at times."""
+    data = write_synthetic(str(tmp_path))
+    run = str(tmp_path / "run_md")
+    quick = ["--contrast-grid", "off", "--final-grid", "off", "--no-param-verify", "--no-fm-curve",
+             "--no-fm-preview"]
+    r = run_wrapper(["--link", "filter", "angsep", "anglemax", "--", "generic"] + data
+                    + ["--weighting", "sqrt_texp", "--max-drop", "1"]
+                    + ["--ann-edges", "6", "20", "--n-iter", "24", "--n-init", "16", "--n-top", "1",
+                       "--n-valid", "1", "--n-remeasure", "1", "--contrast0", "1e-2", "--use-contrast", "5e-2",
+                       "--workers", "2", "--seed", "3", "--no-display", "--run-dir", run] + quick, tmp_path)
+    assert r.returncode == 0, r.stdout[-3000:] + r.stderr[-3000:]
+    with open(os.path.join(run, "run_setup.txt")) as fh:
+        setup = fh.read()
+    assert "partition_weighting: sqrt_texp" in setup
+    sizes = set()
+    with open(os.path.join(run, "results.jsonl")) as fh:
+        for line in fh:
+            cfg = json.loads(line)["config"]
+            sizes.add(len(cfg.get("selected") or cfg["per_partition"]))
+    assert sizes <= {1, 2} and 1 in sizes                               # one partition left out at most
