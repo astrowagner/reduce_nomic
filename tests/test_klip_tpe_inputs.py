@@ -422,3 +422,53 @@ def test_batch_written_into_both_scripts_and_checked(tmp_path):
         r = subprocess.run(base + ["--tag", "bad", "--batch", bad], capture_output=True, text=True)
         assert r.returncode != 0 and "--batch" in r.stderr
         assert not os.path.exists(os.path.join(kt, "inputs_bad"))
+
+
+def test_several_nights_joined_into_one_run(tmp_path):
+    """Two nights become four labeled partitions of one run in --out-folder; the checks refuse bad setups."""
+    root = str(tmp_path)
+    _night(root, "Fake_20220101", 10)
+    _night(root, "Fake_20220102", 12, angles=np.linspace(20, 40, 12))
+    joint = "Fake_20220101-20220102"
+    os.makedirs(os.path.join(root, joint))
+    base = [sys.executable, TOOL, root, "Fake_20220101", "Fake_20220102", "--half", "40", "--psf-half", "10"]
+    r = subprocess.run(base + ["--tag", "nofolder"], capture_output=True, text=True)
+    assert r.returncode != 0 and "--out-folder" in r.stderr                       # where would it go?
+    r = subprocess.run(base + ["--tag", "j", "--out-folder", joint, "--labels", "P1"], capture_output=True, text=True)
+    assert r.returncode != 0 and "one label per night" in r.stderr
+    r = subprocess.run(base + ["--tag", "j", "--out-folder", joint, "--labels", "P1", "P_2"], capture_output=True, text=True)
+    assert r.returncode != 0 and "letters and digits" in r.stderr
+    r = subprocess.run(base + ["--tag", "j", "--out-folder", joint, "--ref", "Fake_20220102", "--ref-min-dpa", "0"],
+                       capture_output=True, text=True)
+    assert r.returncode != 0 and "science nights" in r.stderr
+    r = subprocess.run(base + ["--tag", "j", "--out-folder", joint, "--labels", "P1", "P2", "--link", "bin", "filter"],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    kt = os.path.join(root, joint, "klip_tpe")
+    man = json.load(open(os.path.join(kt, "inputs_j", "manifest.json")))
+    assert man["night"] == joint and man["nights"] == ["Fake_20220101", "Fake_20220102"] and man["labels"] == ["P1", "P2"]
+    assert [p["name"] for p in man["partitions"]] == ["P1_left_A", "P1_left_B", "P2_left_A", "P2_left_B"]
+    assert [p["night"] for p in man["partitions"]] == ["Fake_20220101"] * 2 + ["Fake_20220102"] * 2
+    assert [p["frames"] for p in man["partitions"]] == [10, 10, 12, 12]
+    sh = open(os.path.join(kt, "run_j.sh")).read()
+    assert "--names P1_left_A P1_left_B P2_left_A P2_left_B \\" in sh
+    assert sh.count("_cube1_all_c80.fits") == 2 and sh.count("_cube2_all_c80.fits") == 2
+    assert os.path.join(root, joint, "klip_tpe", "run_j") in sh
+    assert "for Fake_20220101-20220102 (Fake_20220101 + Fake_20220102)" in sh
+    for name in ("run_j_smoke.sh", "resume_j.sh"):
+        assert "--names P1_left_A P1_left_B P2_left_A P2_left_B \\" in open(os.path.join(kt, name)).read()
+    ang = fits.getdata(os.path.join(kt, "inputs_j", "Fake_20220102_left_angles1_all.fits"))
+    assert np.allclose(ang, np.linspace(20, 40, 12))
+    # without labels, each night's UT date labels its partitions
+    r = subprocess.run(base + ["--tag", "jd", "--out-folder", joint], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    man = json.load(open(os.path.join(kt, "inputs_jd", "manifest.json")))
+    assert [p["name"] for p in man["partitions"]] == ["20220101_left_A", "20220101_left_B",
+                                                      "20220102_left_A", "20220102_left_B"]
+    # one night keeps its unlabeled names and its own folder
+    r = subprocess.run([sys.executable, TOOL, root, "Fake_20220101", "--half", "40", "--psf-half", "10", "--tag", "one"],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    man = json.load(open(os.path.join(root, "Fake_20220101", "klip_tpe", "inputs_one", "manifest.json")))
+    assert man["night"] == "Fake_20220101" and man["labels"] is None
+    assert [p["name"] for p in man["partitions"]] == ["left_A", "left_B"]

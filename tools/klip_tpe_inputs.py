@@ -1,6 +1,7 @@
-"""Prepare one night's port products as KLIP-TPE generic inputs, and the command that runs it.
+"""Prepare one or more nights' port products as KLIP-TPE generic inputs, and the command that runs them.
 
-usage: python tools/klip_tpe_inputs.py ARCHIVE NIGHT --tag TAG [--sides left right] [--half 120]
+usage: python tools/klip_tpe_inputs.py ARCHIVE NIGHT [NIGHT ...] --tag TAG [--out-folder FOLDER]
+       [--labels LABEL ...] [--sides left right] [--half 120]
        [--command-archive PATH] [--min-frames 10] [--display show|none] [--ref-min-dpa DEG]
        [--psf-half 30] [--product all|clean] [--ref NIGHT ...] [--ann-edges 11 34 67]
        [--n-iter 400 400] [--n-init 60 60] [--n-remeasure 3] [--contrast0 1e-3] [--workers auto]
@@ -8,8 +9,9 @@ usage: python tools/klip_tpe_inputs.py ARCHIVE NIGHT --tag TAG [--sides left rig
 
 KLIP-TPE's generic adapter (``klip-tpe generic``) takes one registered cube, its derotation angles
 and a PSF template per partition, and optionally a reference cube (RDI). For each side and chop of
-``NIGHT`` with at least ``--min-frames`` frames this writes, under
-``<ARCHIVE>/<NIGHT>/klip_tpe/inputs_<TAG>/``:
+each ``NIGHT`` with at least ``--min-frames`` frames this writes, under
+``<ARCHIVE>/<FOLDER>/klip_tpe/inputs_<TAG>/`` (``FOLDER`` is the night, or ``--out-folder`` when
+several nights are joined, such as the combined folder ``Procyon_20211219-20211220``):
 
 * after checking that the star is at the center (``--max-offset``), the binned frames
   (``--product all``: every binned frame, ``<pre>_cube<n>_align_cen_bin.fits``,
@@ -39,8 +41,8 @@ and a PSF template per partition, and optionally a reference cube (RDI). For eac
   sits at detector angle φ - q, so in a reference frame whose angle q_r is close to a science
   frame's q_s it sits where it does in the science frame, and RDI would subtract it.
 
-and ``<ARCHIVE>/<NIGHT>/klip_tpe/run_<TAG>.sh``, the ``klip-tpe generic`` command over all the
-partitions, writing to ``<ARCHIVE>/<NIGHT>/klip_tpe/run_<TAG>/``, with ``run_<TAG>_smoke.sh``, a
+and ``<ARCHIVE>/<FOLDER>/klip_tpe/run_<TAG>.sh``, the ``klip-tpe generic`` command over all the
+partitions, writing to ``<ARCHIVE>/<FOLDER>/klip_tpe/run_<TAG>/``, with ``run_<TAG>_smoke.sh``, a
 10-evaluation test of the first annulus writing to ``smoke_<TAG>/``, and ``resume_<TAG>.sh``, which
 resumes ``run_<TAG>/`` from its checkpoint (``klip-tpe resume --instrument generic`` with the run's
 data arguments: klip-tpe's run record restores the data arguments only of runs made with
@@ -56,10 +58,18 @@ Parameters
 ----------
 ARCHIVE : str
     NOMIC archive root.
-NIGHT : str
-    Night folder, e.g. ``Vega_20220521``; its ``reduced_py`` holds the port's products.
+NIGHT : str, one or more
+    Night folders, e.g. ``Vega_20220521``; each one's ``reduced_py`` holds the port's products.
+    With several, every side and chop of every night is a partition of one joint run.
 --tag : str
     Name of this input set and run, e.g. ``adi`` or ``rdi``.
+--out-folder : str, default NIGHT
+    Folder of the archive that receives ``klip_tpe/``; needed with several nights, e.g. the
+    combined folder ``Procyon_20211219-20211220``.
+--labels : str list, optional
+    One label per night, put before each partition's name (``<label>_<side>_<chop>``, such as
+    ``P3_left_A``), so that the nights' partitions differ. With one night the default is none
+    (``left_A``); with several, each night folder's last ``_``-separated part (its UT date).
 --sides : str list, default left right
     Sides to include (a side without products is skipped).
 --half : int, default 120
@@ -73,7 +83,8 @@ NIGHT : str
 --product : {"all", "clean"}, default "all"
     Which binned cube to use.
 --ref : str list, optional
-    Nights whose same-side, same-chop IDL-clean frames form the reference library.
+    Nights whose same-side, same-chop IDL-clean frames form the reference library; none of them
+    may be a science night.
 --ref-min-dpa : float, required with ``--ref``
     Smallest angle difference, degrees, between a reference frame and every science frame (0
     keeps every reference frame). A companion at separation r moves by r Δq between frames, so
@@ -137,6 +148,7 @@ NIGHT : str
 Returns
 -------
 inputs_<TAG>/ : files
+    With ``<pre>`` = ``<NIGHT>_<side>``:
     ``<pre>_cube<n>_<product>_c<2 half>.fits`` (float32, shape (n_frames, 2 half, 2 half)),
     ``<pre>_angles<n>_<product>.fits`` (degrees, unwrapped), ``<pre>_cube<n>_psf<2 psf_half>.fits``,
     with ``--ref`` ``<pre>_cube<n>_ref_c<2 half>.fits``, and ``manifest.json`` (sources with their
@@ -149,8 +161,9 @@ inputs_<TAG>/ : files
     with NaN (``nan_within_cut`` per reference night, left out unless ``nan_kept``) or with the
     star off the center (``off_center``), the skipped partitions, the fixed injection contrasts
     (``use_contrast``, None when every annulus calibrates), ``keep_nan``, ``min_coverage``, ``link``
-    and ``batch``, and per partition the frames kept with NaN within the cut (``frames_with_nan``) and
-    the cut's NaN fraction (``nan_fraction``)); with ``--link`` also ``klip_tpe_linked.py``.
+    and ``batch``, the science nights (``nights``, with ``labels``; ``night`` is FOLDER), and per
+    partition its night and the frames kept with NaN within the cut (``frames_with_nan``) and the
+    cut's NaN fraction (``nan_fraction``)); with ``--link`` also ``klip_tpe_linked.py``.
 run_<TAG>.sh, run_<TAG>_smoke.sh, resume_<TAG>.sh : file
     The run, its smoke test and its resume, for Kevin to check and run.
 """
@@ -356,7 +369,7 @@ def unwrap_degrees(angles: np.ndarray) -> np.ndarray:
 
 
 def main(argv: Sequence[str]) -> int:
-    """Write the inputs and the command for one night.
+    """Write the inputs and the command for one night, or for several nights joined.
 
     Parameters
     ----------
@@ -370,8 +383,10 @@ def main(argv: Sequence[str]) -> int:
     """
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("archive")
-    ap.add_argument("night")
+    ap.add_argument("nights", nargs="+", metavar="night")
     ap.add_argument("--tag", required=True)
+    ap.add_argument("--out-folder", default=None)
+    ap.add_argument("--labels", nargs="+", default=None)
     ap.add_argument("--sides", nargs="+", default=["left", "right"])
     ap.add_argument("--half", type=int, default=120)
     ap.add_argument("--psf-half", type=int, default=30)
@@ -422,13 +437,35 @@ def main(argv: Sequence[str]) -> int:
     if a.batch is not None and a.batch > 1:
         extra_opts += f" --batch {a.batch}"
     display = "--show" if a.display == "show" else "--no-display"
-    night_dir = os.path.join(a.archive, a.night)
-    red = os.path.join(night_dir, "reduced_py")
+    nights = list(a.nights)
+    if len(set(nights)) != len(nights):
+        ap.error("a night is given twice")
+    if len(nights) > 1 and not a.out_folder:
+        ap.error("several nights need --out-folder, the folder of the archive that receives klip_tpe/")
+    if set(a.ref) & set(nights):
+        ap.error(f"--ref night(s) {sorted(set(a.ref) & set(nights))} are science nights too")
+    if a.labels is not None:
+        if len(a.labels) != len(nights):
+            ap.error(f"--labels takes one label per night ({len(nights)})")
+        bad = [x for x in a.labels if not re.fullmatch(r"[A-Za-z0-9]+", x)]
+        if bad:
+            ap.error(f"--labels takes letters and digits only, not {' '.join(bad)}")
+        labels = list(a.labels)
+    elif len(nights) > 1:
+        labels = [n.rsplit("_", 1)[-1] for n in nights]
+    else:
+        labels = [""]
+    if len(set(labels)) != len(labels):
+        ap.error(f"the nights' labels {labels} are not all different; give --labels")
+    folder = a.out_folder or nights[0]
+    title = folder if len(nights) == 1 else f"{folder} ({' + '.join(nights)})"
+    night_dir = os.path.join(a.archive, folder)          # the folder that receives klip_tpe/
     out = os.path.join(night_dir, "klip_tpe", f"inputs_{a.tag}")
     if os.path.exists(out):
         raise SystemExit(f"{out} exists; choose another --tag")
     tag = "_clean" if a.product == "clean" else ""
-    manifest: Dict = {"night": a.night, "tag": a.tag, "product": a.product, "half": a.half,
+    manifest: Dict = {"night": folder, "nights": nights, "labels": labels if len(nights) > 1 or a.labels else None,
+                      "tag": a.tag, "product": a.product, "half": a.half,
                       "psf_half": a.psf_half, "ref_nights": a.ref, "min_frames": a.min_frames,
                       "use_contrast": use_contrast, "keep_nan": bool(a.keep_nan),
                       "min_coverage": a.min_coverage, "link": None, "batch": int(a.batch or 1),
@@ -438,171 +475,174 @@ def main(argv: Sequence[str]) -> int:
     psfs: List[str] = []
     refs: List[str] = []
     names: List[str] = []
-    for side in a.sides:
-        pre = f"{a.night}_{side}"
-        for cn in (1, 2):
-            src = os.path.join(red, f"{pre}_cube{cn}_align_cen{tag}_bin.fits")
-            asrc = os.path.join(red, f"{pre}_angles{cn}{tag}_bin.fits")
-            psrc = os.path.join(red, f"{pre}_cube{cn}_align_cen_clean_median_PSF.fits")
-            if not all(os.path.exists(p) for p in (src, asrc, psrc)):
-                print(f"{pre} cube{cn}: products missing; skipped")
-                continue
-            with fits.open(src, memmap=True) as hd:
-                n_src = 1 if hd[0].data.ndim == 2 else int(hd[0].data.shape[0])
-            if n_src < a.min_frames:
-                print(f"{pre} cube{cn}: {n_src} frames, fewer than --min-frames {a.min_frames}; skipped")
-                manifest["skipped"].append({"name": f"{side}_{'AB'[cn - 1]}", "frames": n_src,
-                                            "reason": f"fewer than {a.min_frames} frames"})
-                continue
-            cube = cut_frames(src, a.half)
-            if cube.ndim == 2:
-                cube = cube[None]
-            ang_raw = np.asarray(fits.getdata(asrc), dtype=np.float64).ravel()
-            if len(ang_raw) != cube.shape[0]:
-                raise SystemExit(f"{asrc}: {len(ang_raw)} angles for {cube.shape[0]} frames")
-            if not np.all(np.isfinite(ang_raw)):
-                raise SystemExit(f"{asrc}: {int(np.sum(~np.isfinite(ang_raw)))} angles are not finite")
-            src_idx = np.arange(ang_raw.size)               # index of each kept frame in the binned cube
-            bad = wrap_outliers(ang_raw)
-            dropped = [{"index": int(i), "angle_deg": float(ang_raw[i])} for i in bad]
-            if bad.size:
-                keep = np.setdiff1d(np.arange(ang_raw.size), bad)
-                cube, ang_raw, src_idx = cube[keep], ang_raw[keep], src_idx[keep]
-                print(f"{pre} cube{cn}: left out binned frame(s) {bad.tolist()} with angle(s) "
-                      f"{[round(d['angle_deg'], 2) for d in dropped]} averaged across ±180")
-            fh = finite_half(cube)
-            fh_stats = {"min": int(fh.min()), "p05": int(np.floor(np.percentile(fh, 5))), "median": int(np.median(fh))}
-            has_nan = fh < a.half
-            n_with_nan = int(has_nan.sum())
-            if a.keep_nan:
-                if n_with_nan:
-                    print(f"{pre} cube{cn}: kept {n_with_nan} of {has_nan.size} frame(s) with NaN within the "
-                          f"{2 * a.half} px cut (--keep-nan); finite within ±{fh_stats['min']} px in every frame")
-                has_nan = np.zeros_like(has_nan)
-            dropped_nan = [int(i) for i in src_idx[has_nan]]
-            if has_nan.any():
-                cube, ang_raw, src_idx = cube[~has_nan], ang_raw[~has_nan], src_idx[~has_nan]
-                print(f"{pre} cube{cn}: left out {len(dropped_nan)} of {has_nan.size} frame(s) with NaN within the "
-                      f"{2 * a.half} px cut (past the detector's edge); finite within ±{fh_stats['min']} px in every "
-                      f"frame, ±{fh_stats['p05']} px in 95 %")
-            if cube.shape[0] < a.min_frames:
-                print(f"{pre} cube{cn}: {cube.shape[0]} frames finite within the cut, fewer than --min-frames "
-                      f"{a.min_frames}; skipped")
-                manifest["skipped"].append({"name": f"{side}_{'AB'[cn - 1]}", "frames": int(cube.shape[0]),
-                                            "reason": f"fewer than {a.min_frames} frames finite within the "
-                                                      f"{2 * a.half} px cut ({len(dropped_nan)} with NaN left out)",
-                                            "finite_half_px": fh_stats})
-                continue
-            psf = cut_frames(psrc, a.psf_half)
-            if not np.all(np.isfinite(psf)):
-                print(f"{pre} cube{cn}: the PSF template has {int(np.sum(~np.isfinite(psf)))} NaN pixel(s) within "
-                      f"its {2 * a.psf_half} px cut; skipped")
-                manifest["skipped"].append({"name": f"{side}_{'AB'[cn - 1]}", "frames": int(cube.shape[0]),
-                                            "reason": f"PSF template not finite within its {2 * a.psf_half} px cut"})
-                continue
-            off_c, pk_c, ratio_c = star_offset(cube)
-            off_p, pk_p, ratio_p = star_offset(psf)
-            if off_c > a.max_offset or off_p > a.max_offset or ratio_c < 0.5 or ratio_p < 0.5:
-                print(f"{pre} cube{cn}: star not at the center (median peak near the center at {pk_c} of "
-                      f"{cube.shape[-1]} px, {ratio_c:.2f} of the maximum; PSF peak at {pk_p} of {psf.shape[-1]} px, "
-                      f"{ratio_p:.2f}); skipped")
-                manifest["skipped"].append({"name": f"{side}_{'AB'[cn - 1]}", "frames": int(cube.shape[0]),
-                                            "reason": f"star not at the center: median peak at {pk_c} ({ratio_c:.2f} of the "
-                                                      f"maximum), PSF peak at {pk_p} ({ratio_p:.2f}); limits {a.max_offset} px, 0.5"})
-                continue
-            # The partition's median is centered; now single frames whose chunk was centered on the
-            # wrong spot, which the median does not show.
-            foff = frame_offsets(cube)
-            is_off = foff > a.max_frame_offset
-            dropped_off = [{"index": int(i), "offset_px": round(float(o), 1)} for i, o in zip(src_idx[is_off], foff[is_off])]
-            if is_off.any():
-                cube, ang_raw, src_idx = cube[~is_off], ang_raw[~is_off], src_idx[~is_off]
-                print(f"{pre} cube{cn}: left out {len(dropped_off)} frame(s) whose star is more than "
-                      f"{a.max_frame_offset} px from the center (index, px): "
-                      f"{[(d['index'], d['offset_px']) for d in dropped_off]}")
-            if cube.shape[0] < a.min_frames:
-                print(f"{pre} cube{cn}: {cube.shape[0]} frames with the star at the center, fewer than --min-frames "
-                      f"{a.min_frames}; skipped")
-                manifest["skipped"].append({"name": f"{side}_{'AB'[cn - 1]}", "frames": int(cube.shape[0]),
-                                            "reason": f"fewer than {a.min_frames} frames with the star within "
-                                                      f"{a.max_frame_offset} px of the center ({len(dropped_off)} left out)"})
-                continue
-            ang = unwrap_degrees(ang_raw)
-            unwrapped = bool(np.any(np.abs(ang - ang_raw) > 1e-9))
-            rc, used, ref_info = None, [], []
-            if a.ref:
-                stack = []
-                for rn in a.ref:
-                    rpre = os.path.join(a.archive, rn, "reduced_py", f"{rn}_{side}")
-                    rsrc, rasrc = f"{rpre}_cube{cn}_align_cen_clean_bin.fits", f"{rpre}_angles{cn}_clean_bin.fits"
-                    if not (os.path.exists(rsrc) and os.path.exists(rasrc)):
-                        continue
-                    rframes = cut_frames(rsrc, a.half)
-                    if rframes.ndim == 2:
-                        rframes = rframes[None]
-                    rang = np.asarray(fits.getdata(rasrc), dtype=np.float64).ravel()
-                    if len(rang) != rframes.shape[0] or not np.all(np.isfinite(rang)):
-                        raise SystemExit(f"{rasrc}: {len(rang)} angles for {rframes.shape[0]} frames, or angles not finite")
-                    if rang.size < a.min_frames:                  # a reference cube this short is a failed reduction
-                        ref_info.append({"night": rn, "frames": int(rang.size), "used": 0,
-                                         "reason": f"fewer than {a.min_frames} frames"})
-                        continue
-                    off_r, pk_r, ratio_r = star_offset(rframes)
-                    if off_r > a.max_offset or ratio_r < 0.5:     # star not where the cube says it is
-                        ref_info.append({"night": rn, "frames": int(rang.size), "used": 0,
-                                         "reason": f"star not at the center: median peak at {pk_r} ({ratio_r:.2f} of the maximum)"})
-                        continue
-                    ok = np.ones(rang.size, dtype=bool)
-                    rbad = wrap_outliers(rang)
-                    ok[rbad] = False
-                    rfin = finite_half(rframes) >= a.half       # a reference frame with NaN in the cut would empty its bin too
-                    if not a.keep_nan:
-                        ok &= rfin
-                    rcen = frame_offsets(rframes) <= a.max_frame_offset
-                    ok &= rcen
-                    dpa = np.abs((rang[:, None] - ang_raw[None, :] + 180.0) % 360.0 - 180.0).min(axis=1)
-                    near = ok & (dpa < a.ref_min_dpa)
-                    ok &= dpa >= a.ref_min_dpa
-                    ref_info.append({"night": rn, "frames": int(rang.size), "wrap_averaged": int(rbad.size),
-                                     "nan_within_cut": int((~rfin).sum()), "nan_kept": bool(a.keep_nan),
-                                     "off_center": int((~rcen).sum()),
-                                     "within_min_dpa": int(near.sum()), "used": int(ok.sum()),
-                                     "sources": {os.path.basename(x): sha256_of(x) for x in (rsrc, rasrc)}})
-                    if ok.any():
-                        stack.append(rframes[ok])
-                        used.append(rn)
-                if not stack:
-                    print(f"{pre} cube{cn}: no reference frames from {a.ref} at least {a.ref_min_dpa} deg from the "
-                          f"science angles; skipped")
+    for night, label in zip(nights, labels):
+        red = os.path.join(a.archive, night, "reduced_py")
+        for side in a.sides:
+            pre = f"{night}_{side}"
+            for cn in (1, 2):
+                pname = f"{label}_{side}_{'AB'[cn - 1]}" if label else f"{side}_{'AB'[cn - 1]}"
+                src = os.path.join(red, f"{pre}_cube{cn}_align_cen{tag}_bin.fits")
+                asrc = os.path.join(red, f"{pre}_angles{cn}{tag}_bin.fits")
+                psrc = os.path.join(red, f"{pre}_cube{cn}_align_cen_clean_median_PSF.fits")
+                if not all(os.path.exists(p) for p in (src, asrc, psrc)):
+                    print(f"{pre} cube{cn}: products missing; skipped")
                     continue
-                rc = np.concatenate(stack)
-            c_out = os.path.join(out, f"{pre}_cube{cn}_{a.product}_c{2 * a.half}.fits")
-            a_out = os.path.join(out, f"{pre}_angles{cn}_{a.product}.fits")
-            p_out = os.path.join(out, f"{pre}_cube{cn}_psf{2 * a.psf_half}.fits")
-            os.makedirs(out, exist_ok=True)              # made with the first partition written
-            fits.PrimaryHDU(cube).writeto(c_out)
-            fits.PrimaryHDU(ang).writeto(a_out)
-            fits.PrimaryHDU(psf).writeto(p_out)
-            part = {"name": f"{side}_{'AB'[cn - 1]}", "cube": c_out, "angles": a_out, "psf": p_out,
-                    "frames": int(cube.shape[0]), "angle_first": float(ang[0]), "angle_last": float(ang[-1]),
-                    "angle_min": float(ang.min()), "angle_max": float(ang.max()),
-                    "rotation_deg": float(ang.max() - ang.min()), "unwrapped": unwrapped,
-                    "dropped_wrap_averaged": dropped, "dropped_nan": dropped_nan, "finite_half_px": fh_stats,
-                    "frames_with_nan": int(np.sum(finite_half(cube) < a.half)),
-                    "nan_fraction": float(np.mean(~np.isfinite(cube))),
-                    "dropped_off_center": dropped_off,
-                    "sources": {os.path.basename(p): sha256_of(p) for p in (src, asrc, psrc)}}
-            if rc is not None:
-                r_out = os.path.join(out, f"{pre}_cube{cn}_ref_c{2 * a.half}.fits")
-                fits.PrimaryHDU(rc).writeto(r_out)
-                part.update(ref=r_out, ref_frames=int(rc.shape[0]), ref_nights_used=used, ref_min_dpa=a.ref_min_dpa,
-                            ref_detail=ref_info)
-                refs.append(r_out)
-            manifest["partitions"].append(part)
-            cubes.append(c_out); angles.append(a_out); psfs.append(p_out); names.append(part["name"])
-            print(f"{pre} cube{cn}: {cube.shape[0]} frames, angles {ang[0]:.1f} -> {ang[-1]:.1f} deg "
-                  f"(rotation {part['rotation_deg']:.1f} deg{', unwrapped across ±180' if unwrapped else ''})"
-                  + (f", {part['ref_frames']} reference frames" if a.ref else ""))
+                with fits.open(src, memmap=True) as hd:
+                    n_src = 1 if hd[0].data.ndim == 2 else int(hd[0].data.shape[0])
+                if n_src < a.min_frames:
+                    print(f"{pre} cube{cn}: {n_src} frames, fewer than --min-frames {a.min_frames}; skipped")
+                    manifest["skipped"].append({"name": pname, "frames": n_src,
+                                                "reason": f"fewer than {a.min_frames} frames"})
+                    continue
+                cube = cut_frames(src, a.half)
+                if cube.ndim == 2:
+                    cube = cube[None]
+                ang_raw = np.asarray(fits.getdata(asrc), dtype=np.float64).ravel()
+                if len(ang_raw) != cube.shape[0]:
+                    raise SystemExit(f"{asrc}: {len(ang_raw)} angles for {cube.shape[0]} frames")
+                if not np.all(np.isfinite(ang_raw)):
+                    raise SystemExit(f"{asrc}: {int(np.sum(~np.isfinite(ang_raw)))} angles are not finite")
+                src_idx = np.arange(ang_raw.size)               # index of each kept frame in the binned cube
+                bad = wrap_outliers(ang_raw)
+                dropped = [{"index": int(i), "angle_deg": float(ang_raw[i])} for i in bad]
+                if bad.size:
+                    keep = np.setdiff1d(np.arange(ang_raw.size), bad)
+                    cube, ang_raw, src_idx = cube[keep], ang_raw[keep], src_idx[keep]
+                    print(f"{pre} cube{cn}: left out binned frame(s) {bad.tolist()} with angle(s) "
+                          f"{[round(d['angle_deg'], 2) for d in dropped]} averaged across ±180")
+                fh = finite_half(cube)
+                fh_stats = {"min": int(fh.min()), "p05": int(np.floor(np.percentile(fh, 5))), "median": int(np.median(fh))}
+                has_nan = fh < a.half
+                n_with_nan = int(has_nan.sum())
+                if a.keep_nan:
+                    if n_with_nan:
+                        print(f"{pre} cube{cn}: kept {n_with_nan} of {has_nan.size} frame(s) with NaN within the "
+                              f"{2 * a.half} px cut (--keep-nan); finite within ±{fh_stats['min']} px in every frame")
+                    has_nan = np.zeros_like(has_nan)
+                dropped_nan = [int(i) for i in src_idx[has_nan]]
+                if has_nan.any():
+                    cube, ang_raw, src_idx = cube[~has_nan], ang_raw[~has_nan], src_idx[~has_nan]
+                    print(f"{pre} cube{cn}: left out {len(dropped_nan)} of {has_nan.size} frame(s) with NaN within the "
+                          f"{2 * a.half} px cut (past the detector's edge); finite within ±{fh_stats['min']} px in every "
+                          f"frame, ±{fh_stats['p05']} px in 95 %")
+                if cube.shape[0] < a.min_frames:
+                    print(f"{pre} cube{cn}: {cube.shape[0]} frames finite within the cut, fewer than --min-frames "
+                          f"{a.min_frames}; skipped")
+                    manifest["skipped"].append({"name": pname, "frames": int(cube.shape[0]),
+                                                "reason": f"fewer than {a.min_frames} frames finite within the "
+                                                          f"{2 * a.half} px cut ({len(dropped_nan)} with NaN left out)",
+                                                "finite_half_px": fh_stats})
+                    continue
+                psf = cut_frames(psrc, a.psf_half)
+                if not np.all(np.isfinite(psf)):
+                    print(f"{pre} cube{cn}: the PSF template has {int(np.sum(~np.isfinite(psf)))} NaN pixel(s) within "
+                          f"its {2 * a.psf_half} px cut; skipped")
+                    manifest["skipped"].append({"name": pname, "frames": int(cube.shape[0]),
+                                                "reason": f"PSF template not finite within its {2 * a.psf_half} px cut"})
+                    continue
+                off_c, pk_c, ratio_c = star_offset(cube)
+                off_p, pk_p, ratio_p = star_offset(psf)
+                if off_c > a.max_offset or off_p > a.max_offset or ratio_c < 0.5 or ratio_p < 0.5:
+                    print(f"{pre} cube{cn}: star not at the center (median peak near the center at {pk_c} of "
+                          f"{cube.shape[-1]} px, {ratio_c:.2f} of the maximum; PSF peak at {pk_p} of {psf.shape[-1]} px, "
+                          f"{ratio_p:.2f}); skipped")
+                    manifest["skipped"].append({"name": pname, "frames": int(cube.shape[0]),
+                                                "reason": f"star not at the center: median peak at {pk_c} ({ratio_c:.2f} of the "
+                                                          f"maximum), PSF peak at {pk_p} ({ratio_p:.2f}); limits {a.max_offset} px, 0.5"})
+                    continue
+                # The partition's median is centered; now single frames whose chunk was centered on the
+                # wrong spot, which the median does not show.
+                foff = frame_offsets(cube)
+                is_off = foff > a.max_frame_offset
+                dropped_off = [{"index": int(i), "offset_px": round(float(o), 1)} for i, o in zip(src_idx[is_off], foff[is_off])]
+                if is_off.any():
+                    cube, ang_raw, src_idx = cube[~is_off], ang_raw[~is_off], src_idx[~is_off]
+                    print(f"{pre} cube{cn}: left out {len(dropped_off)} frame(s) whose star is more than "
+                          f"{a.max_frame_offset} px from the center (index, px): "
+                          f"{[(d['index'], d['offset_px']) for d in dropped_off]}")
+                if cube.shape[0] < a.min_frames:
+                    print(f"{pre} cube{cn}: {cube.shape[0]} frames with the star at the center, fewer than --min-frames "
+                          f"{a.min_frames}; skipped")
+                    manifest["skipped"].append({"name": pname, "frames": int(cube.shape[0]),
+                                                "reason": f"fewer than {a.min_frames} frames with the star within "
+                                                          f"{a.max_frame_offset} px of the center ({len(dropped_off)} left out)"})
+                    continue
+                ang = unwrap_degrees(ang_raw)
+                unwrapped = bool(np.any(np.abs(ang - ang_raw) > 1e-9))
+                rc, used, ref_info = None, [], []
+                if a.ref:
+                    stack = []
+                    for rn in a.ref:
+                        rpre = os.path.join(a.archive, rn, "reduced_py", f"{rn}_{side}")
+                        rsrc, rasrc = f"{rpre}_cube{cn}_align_cen_clean_bin.fits", f"{rpre}_angles{cn}_clean_bin.fits"
+                        if not (os.path.exists(rsrc) and os.path.exists(rasrc)):
+                            continue
+                        rframes = cut_frames(rsrc, a.half)
+                        if rframes.ndim == 2:
+                            rframes = rframes[None]
+                        rang = np.asarray(fits.getdata(rasrc), dtype=np.float64).ravel()
+                        if len(rang) != rframes.shape[0] or not np.all(np.isfinite(rang)):
+                            raise SystemExit(f"{rasrc}: {len(rang)} angles for {rframes.shape[0]} frames, or angles not finite")
+                        if rang.size < a.min_frames:                  # a reference cube this short is a failed reduction
+                            ref_info.append({"night": rn, "frames": int(rang.size), "used": 0,
+                                             "reason": f"fewer than {a.min_frames} frames"})
+                            continue
+                        off_r, pk_r, ratio_r = star_offset(rframes)
+                        if off_r > a.max_offset or ratio_r < 0.5:     # star not where the cube says it is
+                            ref_info.append({"night": rn, "frames": int(rang.size), "used": 0,
+                                             "reason": f"star not at the center: median peak at {pk_r} ({ratio_r:.2f} of the maximum)"})
+                            continue
+                        ok = np.ones(rang.size, dtype=bool)
+                        rbad = wrap_outliers(rang)
+                        ok[rbad] = False
+                        rfin = finite_half(rframes) >= a.half       # a reference frame with NaN in the cut would empty its bin too
+                        if not a.keep_nan:
+                            ok &= rfin
+                        rcen = frame_offsets(rframes) <= a.max_frame_offset
+                        ok &= rcen
+                        dpa = np.abs((rang[:, None] - ang_raw[None, :] + 180.0) % 360.0 - 180.0).min(axis=1)
+                        near = ok & (dpa < a.ref_min_dpa)
+                        ok &= dpa >= a.ref_min_dpa
+                        ref_info.append({"night": rn, "frames": int(rang.size), "wrap_averaged": int(rbad.size),
+                                         "nan_within_cut": int((~rfin).sum()), "nan_kept": bool(a.keep_nan),
+                                         "off_center": int((~rcen).sum()),
+                                         "within_min_dpa": int(near.sum()), "used": int(ok.sum()),
+                                         "sources": {os.path.basename(x): sha256_of(x) for x in (rsrc, rasrc)}})
+                        if ok.any():
+                            stack.append(rframes[ok])
+                            used.append(rn)
+                    if not stack:
+                        print(f"{pre} cube{cn}: no reference frames from {a.ref} at least {a.ref_min_dpa} deg from the "
+                              f"science angles; skipped")
+                        continue
+                    rc = np.concatenate(stack)
+                c_out = os.path.join(out, f"{pre}_cube{cn}_{a.product}_c{2 * a.half}.fits")
+                a_out = os.path.join(out, f"{pre}_angles{cn}_{a.product}.fits")
+                p_out = os.path.join(out, f"{pre}_cube{cn}_psf{2 * a.psf_half}.fits")
+                os.makedirs(out, exist_ok=True)              # made with the first partition written
+                fits.PrimaryHDU(cube).writeto(c_out)
+                fits.PrimaryHDU(ang).writeto(a_out)
+                fits.PrimaryHDU(psf).writeto(p_out)
+                part = {"name": pname, "night": night, "cube": c_out, "angles": a_out, "psf": p_out,
+                        "frames": int(cube.shape[0]), "angle_first": float(ang[0]), "angle_last": float(ang[-1]),
+                        "angle_min": float(ang.min()), "angle_max": float(ang.max()),
+                        "rotation_deg": float(ang.max() - ang.min()), "unwrapped": unwrapped,
+                        "dropped_wrap_averaged": dropped, "dropped_nan": dropped_nan, "finite_half_px": fh_stats,
+                        "frames_with_nan": int(np.sum(finite_half(cube) < a.half)),
+                        "nan_fraction": float(np.mean(~np.isfinite(cube))),
+                        "dropped_off_center": dropped_off,
+                        "sources": {os.path.basename(p): sha256_of(p) for p in (src, asrc, psrc)}}
+                if rc is not None:
+                    r_out = os.path.join(out, f"{pre}_cube{cn}_ref_c{2 * a.half}.fits")
+                    fits.PrimaryHDU(rc).writeto(r_out)
+                    part.update(ref=r_out, ref_frames=int(rc.shape[0]), ref_nights_used=used, ref_min_dpa=a.ref_min_dpa,
+                                ref_detail=ref_info)
+                    refs.append(r_out)
+                manifest["partitions"].append(part)
+                cubes.append(c_out); angles.append(a_out); psfs.append(p_out); names.append(part["name"])
+                print(f"{pre} cube{cn}: {cube.shape[0]} frames, angles {ang[0]:.1f} -> {ang[-1]:.1f} deg "
+                      f"(rotation {part['rotation_deg']:.1f} deg{', unwrapped across ±180' if unwrapped else ''})"
+                      + (f", {part['ref_frames']} reference frames" if a.ref else ""))
     if not cubes:
         return 1
     root = a.command_archive or a.archive
@@ -637,7 +677,7 @@ def main(argv: Sequence[str]) -> int:
     data_args += ["  --names " + " ".join(names) + " \\",
                   "  --pxscale 0.0179 --lam 11.1e-6 --diam 8.4 \\"]
     preamble = ["#!/usr/bin/env bash",
-                f"# KLIP-TPE generic run for {a.night} ({a.tag}); made by reduce_nomic tools/klip_tpe_inputs.py",
+                f"# KLIP-TPE generic run for {title} ({a.tag}); made by reduce_nomic tools/klip_tpe_inputs.py",
                 "set -euo pipefail",
                 'KT="${KT:?set KT to the klip-tpe executable of the pinned clone}"',
                 f'RUN={q(run_dir)}']
@@ -650,7 +690,7 @@ def main(argv: Sequence[str]) -> int:
         launch[-1] + " resume --instrument generic \\"] + data_args + [
         f'  --workers "${{WORKERS:-{a.workers}}}" {display} \\',
         '  --run-dir "${RUN:?}" "$@"']
-    resume[1] = (f"# Resume the KLIP-TPE generic run for {a.night} ({a.tag}) from its checkpoint, which holds the "
+    resume[1] = (f"# Resume the KLIP-TPE generic run for {title} ({a.tag}) from its checkpoint, which holds the "
                  f"search's configuration; made by reduce_nomic tools/klip_tpe_inputs.py")
     lines += ["  --names " + " ".join(names) + " \\",
               "  --pxscale 0.0179 --lam 11.1e-6 --diam 8.4 \\",
@@ -660,7 +700,7 @@ def main(argv: Sequence[str]) -> int:
               '  --run-dir "${RUN:?}" "$@"']
     smoke_dir = there(os.path.join(night_dir, "klip_tpe", f"smoke_{a.tag}"))
     smoke = [ln.replace(f"RUN={q(run_dir)}", f"RUN={q(smoke_dir)}") for ln in head]
-    smoke[1] = f"# KLIP-TPE smoke test for {a.night} ({a.tag}): 10 evaluations on the first annulus; its numbers mean nothing"
+    smoke[1] = f"# KLIP-TPE smoke test for {title} ({a.tag}): 10 evaluations on the first annulus; its numbers mean nothing"
     smoke += ["  --names " + " ".join(names) + " \\",
               "  --pxscale 0.0179 --lam 11.1e-6 --diam 8.4 \\",
               f"  --ann-edges {' '.join(a.ann_edges[:2])} --n-iter 10 --n-init 5 --n-top 1 --n-valid 1 --contrast0 {a.contrast0}{extra_opts} \\",
