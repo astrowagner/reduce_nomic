@@ -21,6 +21,17 @@
 #     Annulus edges to mark, arcsec, separated by spaces.
 # PY : environment variable, default python3
 #     Python with numpy and matplotlib.
+# RUN_LABEL : environment variable, default "KLIP-TPE final image (median, S/N 5)"
+#     Legend entry of the run's curve.
+# RUN_SHORT : environment variable, default "KLIP-TPE"
+#     Label beside the run's last point.
+# COMPARE_RUN : environment variable, optional
+#     Another finished run whose final-image curve is drawn in the figure for comparison (the
+#     tables are not changed).
+# COMPARE_LABEL : environment variable, default "KLIP-TPE comparison run (median, S/N 5)"
+#     Legend entry of that curve.
+# COMPARE_SHORT : environment variable, default "Comparison"
+#     Label beside that curve's last point.
 #
 # Returns
 # -------
@@ -38,11 +49,21 @@ IDL="${3:-${OUT_DIR:?}/procyon4_idl_curves_snr5.csv}"
 NAME="${4:-Procyon_4 (2021 Dec 20)}"
 EDGES="${EDGES:-0.70 1.50}"
 PY="${PY:-python3}"
+RUN_LABEL="${RUN_LABEL:-KLIP-TPE final image (median, S/N 5)}"
+RUN_SHORT="${RUN_SHORT:-KLIP-TPE}"
+COMPARE_RUN="${COMPARE_RUN:-}"
+COMPARE_LABEL="${COMPARE_LABEL:-KLIP-TPE comparison run (median, S/N 5)}"
+COMPARE_SHORT="${COMPARE_SHORT:-Comparison}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]:?}")" && pwd)"
 TAG="$(basename "${RUN:?}" | sed 's/^run_//')"
 [ -f "${RUN:?}/final_results.json" ] || { echo "no final_results.json in ${RUN:?}: the run has not finished" >&2; exit 1; }
 [ -f "${RUN:?}/final_grid/curve.txt" ] || { echo "no final_grid/curve.txt in ${RUN:?}" >&2; exit 1; }
 [ -f "${IDL:?}" ] || { echo "no IDL table ${IDL:?}" >&2; exit 1; }
+COMPARE_ARGS=()
+if [ -n "${COMPARE_RUN}" ]; then
+  [ -f "${COMPARE_RUN:?}/final_grid/curve.txt" ] || { echo "no final_grid/curve.txt in ${COMPARE_RUN:?}" >&2; exit 1; }
+  COMPARE_ARGS=(--compare "${COMPARE_RUN:?}" --compare-label "${COMPARE_LABEL:?}" --compare-short "${COMPARE_SHORT:?}")
+fi
 for ext in txt csv png; do
   if [ -e "${OUT_DIR:?}/${TAG:?}_final_vs_idl.${ext:?}" ]; then
     echo "${OUT_DIR:?}/${TAG:?}_final_vs_idl.${ext:?} exists; move it away first" >&2
@@ -57,5 +78,7 @@ read -r -a EDGE_LIST <<< "${EDGES:?}"
   --sep "${SEPS[@]}" 2.5 \
   --out "${OUT_DIR:?}/${TAG:?}_final_vs_idl.csv" > "${OUT_DIR:?}/${TAG:?}_final_vs_idl.txt"
 "${PY:?}" "${HERE:?}/plot_run_vs_idl.py" "${RUN:?}" "${IDL:?}" "${OUT_DIR:?}/${TAG:?}_final_vs_idl.png" \
-  --title "${NAME:?}: KLIP-TPE ${TAG:?} Final Image and IDL Curves" --edges "${EDGE_LIST[@]}"
+  --title "${NAME:?}: KLIP-TPE ${TAG:?} Final Image and IDL Curves" --edges "${EDGE_LIST[@]}" \
+  --run-label "${RUN_LABEL:?}" --run-short "${RUN_SHORT:?}" \
+  ${COMPARE_ARGS[@]+"${COMPARE_ARGS[@]}"}
 echo "wrote ${OUT_DIR:?}/${TAG:?}_final_vs_idl.{txt,csv,png}"

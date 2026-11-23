@@ -2,12 +2,16 @@
 
 usage: python analysis/procyon4_2026-11/plot_run_vs_idl.py RUN_DIR IDL_CSV OUT [--title TITLE]
        [--xmin XMIN] [--xmax XMAX] [--edges E [E ...]]
+       [--run-label LABEL] [--run-short SHORT]
+       [--compare RUN_DIR2 [--compare-label LABEL] [--compare-short SHORT]]
 
 The run's curve is the final-image grid's (``final_grid/curve.txt``): the median over position
 angle at each separation, drawn with its 16th to 84th percentile band. The IDL curves are the
 columns of the table ``idl_curves_compare.py`` writes, each at the points it has, with its label
-from :data:`LABELS`. Every curve is labeled at its last point inside the plot as well as in the
-legend, and the IDL curves are dashed with their own markers, so no curve is told by color alone.
+from :data:`LABELS`. A second run's final curve can be drawn beside the first (``--compare``), solid
+with open markers and in the color after the IDL table's curves. Every curve is labeled at its last
+point inside the plot as well as in the legend, and the IDL curves are dashed with their own
+markers, so no curve is told by color alone.
 
 Parameters
 ----------
@@ -26,6 +30,16 @@ OUT : str
     Largest separation shown, in arcsec.
 --edges : float, optional
     Separations of the run's annulus edges to mark, in arcsec.
+--run-label : str, default "KLIP-TPE final image (median, S/N 5)"
+    Legend entry of the run's curve.
+--run-short : str, default "KLIP-TPE"
+    Label written beside the run's last point.
+--compare : str, optional
+    Another finished run whose final-image curve (median only) is drawn for comparison.
+--compare-label : str, default "KLIP-TPE comparison run (median, S/N 5)"
+    Legend entry of that curve.
+--compare-short : str, default "Comparison"
+    Label written beside that curve's last point.
 
 Returns
 -------
@@ -44,13 +58,18 @@ import numpy as np
 
 #: Display labels of the IDL table's columns; a column not listed keeps its name.
 LABELS = {"dec2025_sav": "IDL Dec 2025 (S/N 5)", "dec2022_5sig": "IDL Dec 2022 (S/N 5)",
-          "jan2022_norepl": "IDL Jan 2022 (S/N 3, scaled to 5)"}
+          "jan2022_norepl": "IDL Jan 2022 (S/N 3, scaled to 5)", "jan2024_sav": "IDL Jan 2024 (S/N 5)",
+          "jan2025_sav": "IDL Jan 2025 (S/N 5)"}
 
-#: Light-mode chart colors: the run, then the IDL curves in table order (validated categorical
-#: slots 1-4), the band, ink and chrome.
+#: Light-mode chart colors: the run (validated categorical slot 1), then the IDL curves in table
+#: order (slots 2-5), the band, ink and chrome.
 COLORS = {"run": "#2a78d6", "idl": ["#eb6834", "#1baf7a", "#eda100", "#e87ba4"], "band": "#b7d3f6",
           "ink": "#0b0b0b", "ink2": "#52514e", "muted": "#898781", "grid": "#e1e0d9", "axis": "#c3c2b7",
           "surface": "#fcfcfb"}
+
+#: Categorical slots 2-8 of the validated palette; a comparison run takes the slot after the IDL
+#: table's curves, so its color never repeats one of theirs.
+SERIES = ["#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
 
 #: Markers of the IDL curves, in table order.
 MARKERS = ["s", "^", "D", "v"]
@@ -58,7 +77,8 @@ MARKERS = ["s", "^", "D", "v"]
 #: Short labels written beside each curve's last point, by IDL column (the legend carries the full
 #: ones), and their offsets from that point in points where the default (6, 0) would sit on
 #: another curve.
-SHORT = {"dec2025_sav": "Dec 2025", "dec2022_5sig": "Dec 2022", "jan2022_norepl": "Jan 2022"}
+SHORT = {"dec2025_sav": "Dec 2025", "dec2022_5sig": "Dec 2022", "jan2022_norepl": "Jan 2022",
+         "jan2024_sav": "Jan 2024", "jan2025_sav": "Jan 2025"}
 OFFSETS = {"dec2022_5sig": (-58, 18)}
 
 
@@ -112,7 +132,11 @@ def read_idl(path: str) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
 
 
 def plot(run: Dict[str, np.ndarray], sep: np.ndarray, idl: Dict[str, np.ndarray], out: str, title: str,
-         xmin: float, xmax: float, edges: Sequence[float] = ()) -> None:
+         xmin: float, xmax: float, edges: Sequence[float] = (),
+         compare: Optional[Dict[str, np.ndarray]] = None,
+         compare_label: str = "KLIP-TPE comparison run (median, S/N 5)",
+         compare_short: str = "Comparison",
+         run_label: str = "KLIP-TPE final image (median, S/N 5)", run_short: str = "KLIP-TPE") -> None:
     """Draw the run's final curve and the IDL curves on one log-contrast axis.
 
     Parameters
@@ -133,6 +157,16 @@ def plot(run: Dict[str, np.ndarray], sep: np.ndarray, idl: Dict[str, np.ndarray]
         Largest separation shown, in arcsec.
     edges : sequence of float, default ()
         Annulus edges to mark, in arcsec.
+    compare : dict of str to ndarray or None, default None
+        A second run's final curve, as :func:`read_final_curve` gives it; its median is drawn.
+    compare_label : str, default "KLIP-TPE comparison run (median, S/N 5)"
+        Legend entry of the second curve.
+    compare_short : str, default "Comparison"
+        Label beside the second curve's last point.
+    run_label : str, default "KLIP-TPE final image (median, S/N 5)"
+        Legend entry of the run's curve.
+    run_short : str, default "KLIP-TPE"
+        Label beside the run's last point.
 
     Returns
     -------
@@ -157,13 +191,20 @@ def plot(run: Dict[str, np.ndarray], sep: np.ndarray, idl: Dict[str, np.ndarray]
                 ms=6.5, mfc=c, mec=COLORS["surface"], mew=1.2, label=LABELS.get(lab, lab), zorder=3)
         ends.append((sep[ok][-1], vals[ok][-1], SHORT.get(lab, lab), OFFSETS.get(lab, (6, 0))))
         print(f"{LABELS.get(lab, lab)}: " + ", ".join(f"{s:.2f}\" {v:.3g}" for s, v in zip(sep[ok], vals[ok])))
+    if compare is not None:
+        c = SERIES[len(idl) % len(SERIES)]
+        rc = compare["sep"]
+        ax.plot(rc, compare["median"], color=c, lw=1.6, marker="o", ms=6.5, mfc=COLORS["surface"],
+                mec=c, mew=1.6, label=compare_label, zorder=3)
+        ends.append((rc[-1], compare["median"][-1], compare_short, (6, 0)))
+        print(f"{compare_label}: " + ", ".join(f"{s:.2f}\" {v:.3g}" for s, v in zip(rc, compare["median"])))
     r = run["sep"]
     ax.fill_between(r, run["p16"], run["p84"], color=COLORS["band"], alpha=0.55, lw=0, zorder=1,
                     label="KLIP-TPE 16th-84th percentile over position angle")
     ax.plot(r, run["median"], color=COLORS["run"], lw=2.0, marker="o", ms=7, mfc=COLORS["run"],
-            mec=COLORS["surface"], mew=1.2, label="KLIP-TPE final image (median, S/N 5)", zorder=4)
-    ends.append((r[-1], run["median"][-1], "KLIP-TPE", (6, 0)))
-    print("KLIP-TPE final image: " + ", ".join(f"{s:.2f}\" {v:.3g}" for s, v in zip(r, run["median"])))
+            mec=COLORS["surface"], mew=1.2, label=run_label, zorder=4)
+    ends.append((r[-1], run["median"][-1], run_short, (6, 0)))
+    print(f"{run_short} final image: " + ", ".join(f"{s:.2f}\" {v:.3g}" for s, v in zip(r, run["median"])))
     for e in edges:
         ax.axvline(e, color=COLORS["muted"], lw=0.9, ls=":", zorder=2)
     ax.set_yscale("log")
@@ -222,10 +263,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--xmin", type=float, default=0.3)
     ap.add_argument("--xmax", type=float, default=2.6)
     ap.add_argument("--edges", type=float, nargs="+", default=[])
+    ap.add_argument("--run-label", default="KLIP-TPE final image (median, S/N 5)")
+    ap.add_argument("--run-short", default="KLIP-TPE")
+    ap.add_argument("--compare")
+    ap.add_argument("--compare-label", default="KLIP-TPE comparison run (median, S/N 5)")
+    ap.add_argument("--compare-short", default="Comparison")
     a = ap.parse_args(argv)
     run = read_final_curve(a.run_dir)
     sep, idl = read_idl(a.idl_csv)
-    plot(run, sep, idl, a.out, a.title, a.xmin, a.xmax, a.edges)
+    compare = read_final_curve(a.compare) if a.compare else None
+    plot(run, sep, idl, a.out, a.title, a.xmin, a.xmax, a.edges, compare, a.compare_label,
+         a.compare_short, a.run_label, a.run_short)
     print(f"wrote {a.out}")
     return 0
 
