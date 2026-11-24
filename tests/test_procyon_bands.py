@@ -64,8 +64,9 @@ def _write_run(run_dir, seps, values, statuses):
     grid.mkdir(parents=True)
     positions, medians = [], []
     for i, (vals, sts) in enumerate(zip(values, statuses)):
-        for v, s in zip(vals, sts):
-            positions.append({"index": len(positions), "sep_index": i, "status": s, "contrast": v})
+        for k, (v, s) in enumerate(zip(vals, sts)):
+            positions.append({"index": len(positions), "sep_index": i, "status": s, "contrast": v,
+                              "theta": 15.0 + 30.0 * k, "trials": [] if v is None else [[v, 5.0]]})
         medians.append(float(np.median([v for v, s in zip(vals, sts) if s in ("converged", "accepted")])))
     (grid / "curve.json").write_text(json.dumps({"r_as": seps, "curve": medians, "positions": positions}))
     lines = ["# sep_arcsec   contrast_median"] + [f"    {s:.4f}     {m:.4e}" for s, m in zip(seps, medians)]
@@ -244,3 +245,42 @@ def test_plot_bands_end_to_end(tmp_path, capsys):
     # a clip needs scatter tables written with the same clip
     with pytest.raises(SystemExit, match="written with clip_sigma"):
         ppc.main([str(tmp_path / "h.png")] + common + ["--bands", "--clip", "3", "--idl-scatter", "IDL", str(scatter)])
+
+
+def test_measurement_table_flags_every_row_and_reproduces_the_points(tmp_path, monkeypatch):
+    """pa_measurements_table.py: one row per position, flagged by its part in each figure, checked against them."""
+    import pa_measurements_table as pmt
+    med = _write_run(tmp_path / "run", [0.35, 0.58], [[1e-3, 2e-3, 4e-3, None], [1e-4, 1.5e-4, 2e-4]],
+                     [["converged", "converged", "accepted", "blocked"], ["converged"] * 3])
+    curves = np.array([[1e-3, 5e-4], [0.0, 6e-4], [np.nan, 7e-4]])
+    monkeypatch.setattr(pmt, "read_sav", lambda path: (curves, np.array([0.0, 120.0, 240.0]), np.array([0.40, 0.50])))
+    monkeypatch.setattr(pmt, "read_curves", _fake_pdf([[(0.4, 2e-3), (0.5, 9e-4)], [(0.4, 9e-3), (0.5, 9e-3)]],
+                                                      [(0.4, 2e-3), (0.5, 9e-4)], "Test 3 / 4 -- SNR = 5.0"))
+    head = "curve,separation_arcsec,contrast,sd,n,n_clipped,band_low,band_high,source\n"
+    body = (f"KLIP-TPE P,0.3500,{med[0]:.4e},0,3,0,0,0,final_grid/curve.txt\n"
+            f"KLIP-TPE P,0.5800,{med[1]:.4e},0,3,0,0,0,final_grid/curve.txt\n"
+            "IDL P,0.4000,1.0000e-03,,1,0,,,v\nIDL P,0.5000,6.0000e-04,1e-4,3,0,5e-4,7e-4,v\n")
+    (tmp_path / "fig.csv").write_text(head + body)
+    (tmp_path / "fig_clip.csv").write_text(head + body)
+    out = tmp_path / "rows.csv"
+    args = [str(out), "--archive", str(tmp_path), "--run", "P", "t", str(tmp_path / "run"),
+            "--idl", "P", "v", str(tmp_path / "v.sav"), "--idl", "P", "w", str(tmp_path / "w.pdf"),
+            "--figure", str(tmp_path / "fig.csv"), "--figure-clip", str(tmp_path / "fig_clip.csv")]
+    assert pmt.main(args) == 0
+    with open(out, newline="") as f:
+        rows = list(csv.DictReader(f))
+    assert list(rows[0]) == pmt.FIELDS and len(rows) == 7 + 6 + 4
+    blocked = [r for r in rows if r["status"] == "blocked"][0]
+    assert blocked["contrast_snr5"] == "" and blocked["in_figure"] == "0" and blocked["clipped"] == ""
+    accepted = [r for r in rows if r["status"] == "accepted"][0]
+    assert accepted["in_figure"] == accepted["in_figure_clip"] == "1" and accepted["clipped"] == "0"
+    idl = {(r["separation_arcsec"], r["position_index"]): r for r in rows if r["version"] == "v"}
+    assert idl[("0.40", "1")]["status"] == "failed (0)" and idl[("0.40", "2")]["status"] == "not recovered (NaN)"
+    assert idl[("0.40", "1")]["pa_deg"] == "30.0000" and idl[("0.40", "0")]["pa_deg"] == "270.0000"
+    assert idl[("0.40", "0")]["in_figure"] == "1" and idl[("0.50", "2")]["in_figure_clip"] == "1"
+    pdf = [r for r in rows if r["version"] == "w"]
+    assert [r["status"] for r in pdf] == ["measured", "unfinished"] * 2 and all(r["in_figure"] == "0" for r in pdf)
+    # a figure point the rows do not reproduce stops the table
+    (tmp_path / "fig.csv").write_text(head + body.replace("6.0000e-04", "6.1000e-04"))
+    with pytest.raises(SystemExit, match="the rows give"):
+        pmt.main([str(tmp_path / "rows2.csv")] + args[1:])
