@@ -233,3 +233,36 @@ def test_max_drop_and_weighting_reach_the_run(tmp_path):
             cfg = json.loads(line)["config"]
             sizes.add(len(cfg.get("selected") or cfg["per_partition"]))
     assert sizes <= {1, 2} and 1 in sizes                               # one partition left out at most
+
+
+def test_known_source_reaches_the_objective_the_sampler_and_the_verify(tmp_path):
+    """A run with --known records it in the objective, keeps every injection 1.5 FWHM away and verifies it."""
+    data = write_synthetic(str(tmp_path))
+    run = str(tmp_path / "run_kn")
+    quick = ["--contrast-grid", "off", "--final-grid", "off", "--no-param-verify", "--no-fm-curve",
+             "--no-fm-preview"]
+    r = run_wrapper(["--link", "filter", "angsep", "anglemax", "--", "generic"] + data
+                    + ["--known", "0.13", "156"]
+                    + ["--ann-edges", "6", "20", "--n-iter", "24", "--n-init", "16", "--n-top", "1",
+                       "--n-valid", "1", "--n-remeasure", "1", "--contrast0", "1e-2", "--use-contrast", "5e-2",
+                       "--workers", "2", "--seed", "3", "--no-display", "--verify", "--run-dir", run] + quick, tmp_path)
+    assert r.returncode == 0, r.stdout[-3000:] + r.stderr[-3000:]
+    with open(os.path.join(run, "run_setup.json")) as fh:
+        setup = json.load(fh)
+    assert setup["objective"]["metric"]["known"] == [[0.13, 156.0]]     # left out of the noise rings
+    assert setup["sampler"]["known"] == [[0.13, 156.0]] and setup["sampler"]["excl_fwhm"] == 1.5
+    keep = 1.5 * float(setup["fwhm_px"]) * 0.01                         # the sampler's keep-out, arcsec
+    n = 0
+    with open(os.path.join(run, "results.jsonl")) as fh:
+        for line in fh:
+            for s in json.loads(line).get("sources") or []:
+                rho, theta = float(s[0]), float(s[1])
+                d = np.sqrt(rho ** 2 + 0.13 ** 2 - 2 * rho * 0.13 * np.cos(np.radians(theta - 156.0)))
+                assert d >= keep * (1 - 1e-9), (rho, theta, d, keep)
+                n += 1
+    assert n > 0
+    with open(os.path.join(run, "annulus01", "verify_report.txt")) as fh:
+        report = fh.read()
+    head = '== candidate 1  rho=0.130"  PA=156.0 deg =='                    # measured as a candidate
+    assert head in report
+    assert report.split(head, 1)[1].lstrip().startswith("[A] combined S/N =")

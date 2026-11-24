@@ -6,7 +6,7 @@ usage: python tools/klip_tpe_inputs.py ARCHIVE NIGHT [NIGHT ...] --tag TAG [--ou
        [--psf-half 30] [--product all|clean] [--ref NIGHT ...] [--ann-edges 11 34 67]
        [--n-iter 400 400] [--n-init 60 60] [--n-remeasure 3] [--contrast0 1e-3] [--workers auto]
        [--use-contrast C ...] [--keep-nan] [--min-coverage F] [--link BASE ...] [--batch N]
-       [--bin-max N] [--max-drop N] [--weighting equal|sqrt_texp]
+       [--bin-max N] [--max-drop N] [--weighting equal|sqrt_texp] [--known RHO PA [--known RHO PA ...]]
 
 KLIP-TPE's generic adapter (``klip-tpe generic``) takes one registered cube, its derotation angles
 and a PSF template per partition, and optionally a reference cube (RDI). For each side and chop of
@@ -164,6 +164,15 @@ NIGHT : str, one or more
     ``sqrt_texp`` weights each by the square root of its exposure, which the generic adapter takes
     as its number of frames. A resume rebuilds the reducer from its arguments, so it goes into
     the three scripts; the manifest records it (``weighting``, None without it).
+--known : float pair, repeatable, optional
+    A real or suspected companion, as its separation in arcsec and its position angle in degrees
+    east of north (KLIP-TPE's ``--known RHO PA``). The search's noise rings and the verify's leave
+    it out, no injection lands within 1.5 FWHM of it, and the verify measures it as a candidate on
+    each annulus' winner and on the stitched image. Up to klip-tpe ``aa0702b`` the final S/N map
+    (``klip_stitched_snr.fits``) still counts it in its radius' noise; ``76c1c64`` leaves it out. A
+    resume rebuilds the objective and the injection sampler from its command line, and klip-tpe
+    restores no option from the record of a generic run, so it goes into the three scripts; the
+    manifest records the list (``known``, ``[rho_arcsec, pa_deg]`` pairs, None without it).
 
 Returns
 -------
@@ -181,7 +190,7 @@ inputs_<TAG>/ : files
     with NaN (``nan_within_cut`` per reference night, left out unless ``nan_kept``) or with the
     star off the center (``off_center``), the skipped partitions, the fixed injection contrasts
     (``use_contrast``, None when every annulus calibrates), ``keep_nan``, ``min_coverage``, ``link``,
-    ``batch``, ``bin_max``, ``max_drop`` and ``weighting``, the science nights (``nights``, with
+    ``batch``, ``bin_max``, ``max_drop``, ``weighting`` and ``known``, the science nights (``nights``, with
     ``labels``; ``night`` is FOLDER), and per partition its night and the frames kept with NaN within
     the cut (``frames_with_nan``) and the cut's NaN fraction (``nan_fraction``)); with ``--link``
     also ``klip_tpe_linked.py``.
@@ -433,6 +442,7 @@ def main(argv: Sequence[str]) -> int:
     ap.add_argument("--bin-max", type=int, default=None)
     ap.add_argument("--max-drop", type=int, default=None)
     ap.add_argument("--weighting", choices=["equal", "sqrt_texp"], default=None)
+    ap.add_argument("--known", type=float, nargs=2, action="append", metavar=("RHO", "PA"), default=None)
     a = ap.parse_args(argv)
     if a.batch is not None and a.batch < 1:
         ap.error("--batch is a number of trials, at least 1")
@@ -443,6 +453,13 @@ def main(argv: Sequence[str]) -> int:
     space_opts = f" --bin-max {a.bin_max}" if a.bin_max is not None else ""
     if a.weighting is not None:
         space_opts += f" --weighting {a.weighting}"
+    known: Optional[List[List[float]]] = None
+    if a.known is not None:
+        known = [[float(rho), float(pa)] for rho, pa in a.known]
+        if not all(np.isfinite(rho) and rho > 0 and np.isfinite(pa) for rho, pa in known):
+            ap.error("--known takes a separation in arcsec above 0 and a finite position angle in degrees")
+        # in all three scripts: a resume rebuilds the objective and the sampler from its command line
+        space_opts += "".join(f" --known {rho:.10g} {pa:.10g}" for rho, pa in known)
     if a.min_coverage is not None and not (np.isfinite(a.min_coverage) and 0.0 <= a.min_coverage <= 1.0):
         ap.error("--min-coverage is a fraction of the frames, from 0 to 1")
     link: Optional[List[str]] = None
@@ -503,7 +520,7 @@ def main(argv: Sequence[str]) -> int:
                       "use_contrast": use_contrast, "keep_nan": bool(a.keep_nan),
                       "min_coverage": a.min_coverage, "link": None, "batch": int(a.batch or 1),
                       "bin_max": a.bin_max, "max_drop": a.max_drop, "weighting": a.weighting,
-                      "partitions": [], "skipped": []}
+                      "known": known, "partitions": [], "skipped": []}
     cubes: List[str] = []
     angles: List[str] = []
     psfs: List[str] = []

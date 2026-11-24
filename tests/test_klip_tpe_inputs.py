@@ -526,3 +526,29 @@ def test_max_drop_in_the_start_scripts_and_weighting_in_all_three(tmp_path):
         r = subprocess.run(base + ["--tag", "bad"] + bad, capture_output=True, text=True)
         assert r.returncode != 0
         assert not os.path.exists(os.path.join(kt, "inputs_bad"))
+
+
+def test_known_sources_in_all_three_scripts_and_the_manifest(tmp_path):
+    """--known reaches the run, smoke and resume scripts (a resume rebuilds the objective from them) and the manifest."""
+    root = str(tmp_path)
+    _night(root, "Fake_20220101", 10)
+    base = [sys.executable, TOOL, root, "Fake_20220101", "--half", "40", "--psf-half", "10"]
+    kt = os.path.join(root, "Fake_20220101", "klip_tpe")
+    r = subprocess.run(base + ["--tag", "kn", "--weighting", "sqrt_texp", "--known", "0.456", "156",
+                               "--known", "1.2", "30.5"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    for name in ("run_kn.sh", "run_kn_smoke.sh", "resume_kn.sh"):
+        sh = open(os.path.join(kt, name)).read()
+        assert "--diam 8.4 --weighting sqrt_texp --known 0.456 156 --known 1.2 30.5 \\" in sh, name
+        assert subprocess.run(["bash", "-n", os.path.join(kt, name)]).returncode == 0, name
+    man = json.load(open(os.path.join(kt, "inputs_kn", "manifest.json")))
+    assert man["known"] == [[0.456, 156.0], [1.2, 30.5]]
+    r = subprocess.run(base + ["--tag", "plain"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "--known" not in open(os.path.join(kt, "run_plain.sh")).read()
+    assert json.load(open(os.path.join(kt, "inputs_plain", "manifest.json")))["known"] is None
+    for bad in (["--known", "0", "156"], ["--known", "-0.4", "156"], ["--known", "nan", "156"],
+                ["--known", "0.456", "inf"], ["--known", "0.456"]):
+        r = subprocess.run(base + ["--tag", "bad"] + bad, capture_output=True, text=True)
+        assert r.returncode != 0, bad
+        assert not os.path.exists(os.path.join(kt, "inputs_bad"))
