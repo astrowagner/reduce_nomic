@@ -161,7 +161,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     a = p.parse_args(argv)
     if a.out and os.path.exists(a.out):
         raise SystemExit(f"refusing to overwrite {a.out}")
-    out = [f"# Procyon B about A, Bond et al. (2015) Table 8: " +
+    out = ["# Procyon B about A, Bond et al. (2015) Table 8: " +
            ", ".join(f"{k} {v}" for k, v in ORBIT.items())]
     for s in a.epochs:
         t = decimal_year(s)
