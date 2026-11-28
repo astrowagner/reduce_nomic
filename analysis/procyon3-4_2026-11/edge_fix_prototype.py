@@ -38,7 +38,8 @@ Usage
 -----
 python edge_fix_prototype.py reduce --kt-src DIR --run-dir RUN --inputs DIR --annulus N --variant V
     --out DIR [--inject] [--inj-tag TAG] [--rotate-sources DEG] [--skip-clean] [--pixcomb]
-    [--workers 2] [--extra-sources FILE] [--param KEY=VALUE]... [--label L]
+    [--combine {scalar,coverage,inverse_variance}] [--workers 2] [--extra-sources FILE]
+    [--param KEY=VALUE]... [--label L]
 python edge_fix_prototype.py stages ... --partition P
 python edge_fix_prototype.py compare --kt-src DIR --run-dir RUN --annulus N --out DIR
     [--only L...] [--counts LABEL:SOURCE]...
@@ -48,11 +49,16 @@ python edge_fix_prototype.py recombine --out DIR --source L --label NEW --mode {
     [--tags TAG...]
 python edge_fix_prototype.py figure --kt-src DIR --run-dir RUN --annulus N --out DIR
     --before L --after L [--counts LABEL:SOURCE]...
+python edge_fix_prototype.py ktsnr --kt-src DIR --run-dir RUN --annulus N --out DIR --labels L...
+python edge_fix_prototype.py pixdiff --run-dir RUN --annulus N --out DIR --pairs A:B... [--tags TAG...]
 
 ``--kt-src`` is a directory holding the ``klip_tpe`` package (a checkout of ``bf99474`` or a commit
-with the same code), ``--run-dir`` the finished run, ``--inputs`` the folder of its input cubes,
-angles and PSFs (the run's ``inputs_*`` folder, with ``manifest.json``), N the annulus counted from
-1 and V a variant above.
+with the same code, for the patches), ``--run-dir`` the finished run, ``--inputs`` the folder of its
+input cubes, angles and PSFs (the run's ``inputs_*`` folder, with ``manifest.json``), N the annulus
+counted from 1 and V a variant above. With klip-tpe ``1a42207`` or later, which implements the fixes,
+``reduce --variant base --combine MODE --param klip_nan_fit=... --param nw_var=...`` reduces with its
+own rules and writes its noise maps, ``ktsnr`` makes its own S/N maps, and ``pixdiff`` compares the
+images with the prototype's.
 """
 
 import argparse
@@ -597,6 +603,37 @@ def pixel_combine(red, cfg, sources, selected):
     return img, stack, cnt, sig
 
 
+def kt_noise_map(ev, min_coverage=0.0):
+    """Return KLIP-TPE's own expected-noise map of a reduction, where the klip-tpe code has one.
+
+    klip-tpe 1a42207 and later count each partition's residual frames with data and measure their
+    noise per frame, and ``klip_tpe.reducer.expected_noise`` turns those into the image's expected
+    noise, which its S/N maps take, NaN where fewer than ``min_coverage`` of all the residual frames
+    hold data. With ``min_coverage`` 0 the map has no floor, as `expected_noise` makes it for the
+    prototype's own reductions; KLIP-TPE's S/N maps use 0.05 (``RunConfig.snr_min_coverage``).
+
+    Parameters
+    ----------
+    ev : klip_tpe.reducer.EvalImages
+        The reduction.
+    min_coverage : float, default 0.0
+        The floor, a fraction of all the residual frames.
+
+    Returns
+    -------
+    ndarray, shape (ny, nx), or None
+        The noise map, None with older klip-tpe code or a reduction without counts.
+    """
+    try:
+        from klip_tpe.reducer import expected_noise as kt_expected_noise
+    except ImportError:
+        return None
+    try:
+        return kt_expected_noise(ev, float(min_coverage))
+    except Exception:                 # noqa: BLE001 - a reduction without counts has no map
+        return None
+
+
 def parse_params(items):
     """Parse ``KEY=VALUE`` reducer parameters, the values read as JSON where they parse.
 
@@ -636,7 +673,9 @@ def cmd_reduce(a):
         with ``--inject``, ``LABEL_TAG.fits``, ``LABEL_TAG_stack.fits`` and the sources'
         ``[rho_arcsec, theta_deg, contrast]`` rows in ``LABEL_sources.json`` (TAG ``inj``) or
         ``LABEL_TAG_sources.json`` into ``--out``; LABEL is ``--label`` or the variant and TAG
-        ``--inj-tag``. With ``--pixcomb`` each pass also writes ``*_counts.fits``.
+        ``--inj-tag``. With ``--pixcomb`` each pass also writes ``*_counts.fits``; with klip-tpe
+        1a42207 or later each pass writes its own noise map, ``*_noise.fits`` (`kt_noise_map`), and
+        ``--combine`` sets that code's partition combination.
     """
     sys.path.insert(0, a.kt_src)
     install(a.variant)
@@ -655,6 +694,10 @@ def cmd_reduce(a):
         raise SystemExit(f"{src_json} exists; not overwriting")
     t0 = time.time()
     red = build_reducer(a.inputs, setup, selected, a.workers)
+    if a.combine:
+        if a.pixcomb:
+            raise SystemExit("--combine is KLIP-TPE's own combination; --pixcomb is the prototype's")
+        red.combine = a.combine
     extra = parse_params(a.param)
     cfg = winner_config(rec, setup, selected, extra)
     hdr = {"VARIANT": a.variant, "LABEL": label, "ANNULUS": a.annulus, "WINNER": rec["index"],
@@ -675,11 +718,20 @@ def cmd_reduce(a):
             print(f"{label} {tag}: {time.time() - t1:.0f} s, finite {np.isfinite(img).mean():.3f}")
             continue
         ev = red.reduce_config(cfg, srcs)
-        write_image(os.path.join(a.out, f"{label}_{tag}.fits"), ev.image, hdr)
+        took = getattr(ev, "combine", None)
+        hdr_t = dict(hdr, KTCOMB=str(took)) if took is not None else hdr
+        write_image(os.path.join(a.out, f"{label}_{tag}.fits"), ev.image, hdr_t)
         if ev.stack is not None:
             write_image(os.path.join(a.out, f"{label}_{tag}_stack.fits"), ev.stack,
-                        dict(hdr, STACKOF=",".join(str(p) for p in (ev.partitions or selected))))
-        print(f"{label} {tag}: {time.time() - t1:.0f} s, finite {np.isfinite(ev.image).mean():.3f}")
+                        dict(hdr_t, STACKOF=",".join(str(p) for p in (ev.partitions or selected))))
+        noise = kt_noise_map(ev)
+        if noise is not None:
+            write_image(os.path.join(a.out, f"{label}_{tag}_noise.fits"), noise,
+                        dict(hdr_t, NOISEOF="klip_tpe.reducer.expected_noise, min_coverage 0"))
+            write_image(os.path.join(a.out, f"{label}_{tag}_noise05.fits"), kt_noise_map(ev, 0.05),
+                        dict(hdr_t, NOISEOF="klip_tpe.reducer.expected_noise, min_coverage 0.05"))
+        print(f"{label} {tag}: {time.time() - t1:.0f} s, finite {np.isfinite(ev.image).mean():.3f}"
+              + (f", combined {took}" if took is not None else ""))
     if a.inject:
         with open(src_json, "x") as f:
             json.dump([list(r) for r in source_rows(rec, a.extra_sources, a.rotate_sources)], f)
@@ -1120,6 +1172,9 @@ def matched_filter(img, kernel):
 def noise_map_of(out, label, source):
     """Return a variant's expected noise from the frame counts of a pixel-combined reduction.
 
+    A reduction by klip-tpe 1a42207 or later that wrote its own noise map, ``LABEL_clean_noise.fits``
+    (`kt_noise_map`), gives that map instead.
+
     Parameters
     ----------
     out : str
@@ -1135,13 +1190,16 @@ def noise_map_of(out, label, source):
     noise : ndarray, shape (ny, nx)
         `expected_noise`, NaN where no partition has data.
     mode : str
-        How the variant's partitions were combined (`combine_mode`).
+        How the variant's partitions were combined (`combine_mode`), or "klip-tpe" for its own map.
 
     Raises
     ------
     SystemExit
         If the counts file is missing.
     """
+    npath = os.path.join(out, f"{label}_clean_noise.fits")
+    if os.path.exists(npath):
+        return fits.getdata(npath).astype(float), "klip-tpe"
     cpath = os.path.join(out, f"{source}_clean_counts.fits")
     if not os.path.exists(cpath):
         raise SystemExit(f"{cpath} is missing: reduce {source} with --pixcomb, or pass --counts {label}:SOURCE")
@@ -1457,6 +1515,117 @@ def plot_sensitivity(path, res, labels, ref, annulus, names, legend_title=None):
     plt.close(fig)
 
 
+def cmd_ktsnr(a):
+    """Make KLIP-TPE's own S/N map of each label's clean image, with its noise map, and count its features.
+
+    The map is ``klip_tpe.products.snr_map`` of klip-tpe 1a42207 or later with ``noise`` the
+    reduction's floored noise map (``LABEL_clean_noise05.fits``, `kt_noise_map` at 0.05), as the
+    run's products make it, and the run's pixel mask. It writes ``LABEL_ktsnr.fits`` and a table of
+    the largest |S/N| and the pixels above 4.5 and 5, over the zone and where the run's coverage is
+    at least 0.05.
+
+    Parameters
+    ----------
+    a : argparse.Namespace
+        The parsed command line of the ``ktsnr`` step.
+
+    Returns
+    -------
+    None
+        Writes ``LABEL_ktsnr.fits`` per label and ``ktsnr.txt`` into ``--out``.
+    """
+    sys.path.insert(0, a.kt_src)
+    from klip_tpe.products import snr_map
+    setup = run_setup(a.run_dir)
+    rec = load_winner(a.run_dir, a.annulus)
+    fwhm = float(setup["fwhm_px"])
+    a_in, a_out = (float(v) for v in rec["meta"]["zone"])
+    cov = fits.getdata(os.path.join(a.run_dir, "coverage.fits")).astype(float)
+    pmask = fits.getdata(os.path.join(a.run_dir, "pixel_mask.fits")).astype(bool)
+    ny, nx = cov.shape
+    yy, xx = np.mgrid[:ny, :nx]
+    r = np.hypot(xx - (nx - 1) / 2.0, yy - (ny - 1) / 2.0)
+    zone = (r >= a_in) & (r < a_out)
+    lines = [f"KLIP-TPE's S/N maps of the clean images (klip_tpe.products.snr_map with the noise map at a 0.05 floor "
+             f"of the residual frames, the run's pixel mask); annulus {a.annulus}, zone {a_in:.2f}-{a_out:.2f} px",
+             "label          finite   max|S/N| zone  >4.5  >5    max|S/N| cov>=0.05  >4.5  >5"]
+    for v in a.labels:
+        img = np.where(zone, fits.getdata(os.path.join(a.out, f"{v}_clean.fits")).astype(float), np.nan)
+        npath = os.path.join(a.out, f"{v}_clean_noise05.fits")
+        noise = fits.getdata(npath).astype(float) if os.path.exists(npath) else None
+        s = snr_map(img, fwhm, pixel_mask=pmask, noise=noise)
+        p = os.path.join(a.out, f"{v}_ktsnr.fits")
+        if not os.path.exists(p):
+            fits.writeto(p, np.asarray(s, np.float32))
+        sz = np.abs(s[zone])
+        sc = np.abs(s[zone & (cov >= 0.05)])
+        lines.append(f"{v:12s} {np.isfinite(s[zone]).mean():7.3f}   {np.nanmax(sz):6.2f}    {int(np.nansum(sz > 4.5)):5d} "
+                     f"{int(np.nansum(sz > 5)):5d}   {np.nanmax(sc):6.2f}           {int(np.nansum(sc > 4.5)):5d} "
+                     f"{int(np.nansum(sc > 5)):5d}" + ("" if noise is not None else "   (no noise map)"))
+    text = "\n".join(lines)
+    print(text)
+    with open(os.path.join(a.out, "ktsnr.txt"), "w") as f:
+        f.write(text + "\n")
+
+
+def cmd_pixdiff(a):
+    """Compare pairs of images pixel by pixel over the zone: NaN pattern, size and place of the differences.
+
+    Each pair ``A:B`` compares ``A_TAG.fits`` with ``B_TAG.fits``; B ``run`` is the run's own
+    ``annulusNN/best_clean.fits`` (with TAG ``clean``). The differences are in units of B's robust
+    sigma over the zone, with the run's coverage and the radius where they exceed 1 and 3 of it.
+
+    Parameters
+    ----------
+    a : argparse.Namespace
+        The parsed command line of the ``pixdiff`` step.
+
+    Returns
+    -------
+    None
+        Writes ``pixdiff.txt`` into ``--out``.
+    """
+    setup = run_setup(a.run_dir)
+    rec = load_winner(a.run_dir, a.annulus)
+    a_in, a_out = (float(v) for v in rec["meta"]["zone"])
+    cov = fits.getdata(os.path.join(a.run_dir, "coverage.fits")).astype(float)
+    ny, nx = cov.shape
+    yy, xx = np.mgrid[:ny, :nx]
+    r = np.hypot(xx - (nx - 1) / 2.0, yy - (ny - 1) / 2.0)
+    zone = (r >= a_in) & (r < a_out)
+    lines = [f"Pixel differences over annulus {a.annulus}'s zone {a_in:.2f}-{a_out:.2f} px (pixel scale "
+             f"{float(setup['pxscale'])} arcsec), in units of the second image's robust sigma"]
+    for pair in a.pairs:
+        x, y = pair.split(":", 1)
+        for tag in a.tags:
+            px = os.path.join(a.out, f"{x}_{tag}.fits")
+            py = (os.path.join(a.run_dir, f"annulus{a.annulus:02d}", "best_clean.fits") if y == "run"
+                  else os.path.join(a.out, f"{y}_{tag}.fits"))
+            if not (os.path.exists(px) and os.path.exists(py)) or (y == "run" and tag != "clean"):
+                continue
+            ix = np.where(zone, fits.getdata(px).astype(float), np.nan)
+            iy = np.where(zone, fits.getdata(py).astype(float), np.nan)
+            s = robust_sigma(iy[zone])
+            d = (ix - iy) / s
+            fx, fy = np.isfinite(ix), np.isfinite(iy)
+            both = fx & fy
+            parts = [f"{x} vs {y} ({tag}): NaN pattern {'equal' if np.array_equal(fx, fy) else 'differs'} "
+                     f"({int(np.sum(fx & ~fy))} finite only in {x}, {int(np.sum(fy & ~fx))} only in {y}); "
+                     f"max |diff| {np.max(np.abs(d[both])):.3g}, robust sigma of diff {robust_sigma(d[both]):.4f}"]
+            for thr in (1.0, 3.0):
+                m = both & (np.abs(d) > thr)
+                if m.any():
+                    parts.append(f"> {thr:g}: {int(m.sum())} px, coverage {cov[m].min():.3f}-{cov[m].max():.3f} "
+                                 f"(median {np.median(cov[m]):.3f}), r {r[m].min():.1f}-{r[m].max():.1f} px")
+                else:
+                    parts.append(f"> {thr:g}: none")
+            lines.append("; ".join(parts))
+    text = "\n".join(lines)
+    print(text)
+    with open(os.path.join(a.out, "pixdiff.txt"), "w") as f:
+        f.write(text + "\n")
+
+
 def cmd_recombine(a):
     """Combine a ``--pixcomb`` reduction's partition images with another mode's weights, without reducing.
 
@@ -1750,6 +1919,8 @@ def main(argv=None):
     p.add_argument("--label", default=None, help="output name in place of the variant's")
     p.add_argument("--pixcomb", action="store_true",
                    help="combine the partitions with per-pixel inverse-variance weights (pixel_combine)")
+    p.add_argument("--combine", default=None, choices=("scalar", "coverage", "inverse_variance"),
+                   help="KLIP-TPE's own PartitionedReducer.combine (klip-tpe 1a42207 and later)")
     p.set_defaults(func=cmd_reduce)
     p = sub.add_parser("stages", help="profile each step of one partition's reduction near the detector edge")
     p.add_argument("--kt-src", required=True, help="directory holding the klip_tpe package")
@@ -1787,6 +1958,20 @@ def main(argv=None):
     p.add_argument("--legend-title", default=None, help="title of the figure's legends")
     p.add_argument("--prefix", default="sensitivity", help="name of the output files (default sensitivity)")
     p.set_defaults(func=cmd_sensitivity)
+    p = sub.add_parser("ktsnr", help="KLIP-TPE's own S/N maps of the clean images, with their noise maps")
+    p.add_argument("--kt-src", required=True, help="directory holding the klip_tpe package (1a42207 or later)")
+    p.add_argument("--run-dir", required=True, help="the finished run")
+    p.add_argument("--annulus", type=int, required=True, help="annulus, counted from 1")
+    p.add_argument("--out", required=True, help="the folder of the reduce step")
+    p.add_argument("--labels", nargs="+", required=True, help="the reductions")
+    p.set_defaults(func=cmd_ktsnr)
+    p = sub.add_parser("pixdiff", help="compare pairs of images pixel by pixel over the zone")
+    p.add_argument("--run-dir", required=True, help="the finished run")
+    p.add_argument("--annulus", type=int, required=True, help="annulus, counted from 1")
+    p.add_argument("--out", required=True, help="the folder of the reduce step")
+    p.add_argument("--pairs", nargs="+", required=True, metavar="A:B", help="labels to compare; B 'run' is the run's image")
+    p.add_argument("--tags", nargs="+", default=["clean", "inj"], help="passes to compare (default clean inj)")
+    p.set_defaults(func=cmd_pixdiff)
     p = sub.add_parser("recombine", help="combine a --pixcomb reduction's partition images with other weights")
     p.add_argument("--out", required=True, help="the folder of the reduce step")
     p.add_argument("--source", required=True, help="label of a --pixcomb reduction (its stacks and counts)")

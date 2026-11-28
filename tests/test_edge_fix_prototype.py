@@ -134,6 +134,11 @@ def test_recombine_and_combine_mode():
     assert efp.combine_mode({}) == "equal"
 
 
+def test_kt_noise_map_without_counts_is_none():
+    """A reduction without klip-tpe's counts (or older klip-tpe code) gives no noise map."""
+    assert efp.kt_noise_map(object()) is None
+
+
 def test_robust_sigma_and_minimum():
     """The MAD sigma of Gaussian values is near 1; too few values give NaN."""
     v = np.random.default_rng(4).normal(size=40000)
