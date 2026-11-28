@@ -22,7 +22,9 @@ changed). A variant is a name in `VARIANTS` or patches of `PATCHES` joined with 
 - ``hpmask_klip``: ``hpmask`` and ``mklip``.
 
 ``reduce --pixcomb`` also replaces the partitions' one-weight combination with per-pixel
-inverse-variance weights from each partition's frame counts (`pixel_combine`).
+inverse-variance weights from each partition's frame counts (`pixel_combine`), and the
+``recombine`` step combines the partition images it saved with other weights (`partition_weights`):
+the fraction of each partition's frames with data, which leaves data without NaN as they are.
 
 The ``compare`` step reads the images and makes, for every variant, KLIP-TPE's S/N map
 (``klip_tpe.products.snr_map``) and a noise-map one: the same map of the image divided by its
@@ -41,7 +43,9 @@ python edge_fix_prototype.py stages ... --partition P
 python edge_fix_prototype.py compare --kt-src DIR --run-dir RUN --annulus N --out DIR
     [--only L...] [--counts LABEL:SOURCE]...
 python edge_fix_prototype.py sensitivity --kt-src DIR --run-dir RUN --annulus N --out DIR
-    --labels L... --tags TAG... [--counts LABEL:SOURCE]... [--ref L]
+    --labels L... --tags TAG... [--counts LABEL:SOURCE]... [--ref L] [--prefix NAME]
+python edge_fix_prototype.py recombine --out DIR --source L --label NEW --mode {pixel,coverage,equal}
+    [--tags TAG...]
 python edge_fix_prototype.py figure --kt-src DIR --run-dir RUN --annulus N --out DIR
     --before L --after L [--counts LABEL:SOURCE]...
 
@@ -736,14 +740,76 @@ def relative_noise(img, cov, fwhm, rmin, rmax, cov_edges=(0.0, 0.5, 0.6, 0.7, 0.
     return ndimage.gaussian_filter(out, fwhm / 2.355)
 
 
-def expected_noise(counts, sig, pixel_weights):
+#: The ``COMBINE`` card of a reduction and the partition weights it stands for (`partition_weights`);
+#: a reduction without the card used KLIP-TPE's one equal weight per partition.
+COMBINE_MODES = {"pixel inverse variance": "pixel", "pixel coverage": "coverage", "equal": "equal"}
+
+
+def combine_mode(header):
+    """Return how a reduction's partitions were combined, from its ``COMBINE`` card.
+
+    Parameters
+    ----------
+    header : astropy.io.fits.Header or dict
+        The clean image's header.
+
+    Returns
+    -------
+    str
+        "pixel", "coverage" or "equal" (`partition_weights`); "equal" without the card.
+    """
+    return COMBINE_MODES.get(str(header.get("COMBINE", "equal")).strip(), "equal")
+
+
+def partition_weights(counts, sig, mode):
+    """Return each partition's weight at each pixel for a combination mode.
+
+    "pixel" is the inverse of each partition's variance there, n_p / s_p**2; "coverage" is the
+    fraction of the partition's frames with data there, n_p / N_p, which is 1 wherever every frame
+    has data, so data without NaN combine as with equal weights; "equal" is 1 wherever the
+    partition has data. N_p is the largest count of partition p.
+
+    Parameters
+    ----------
+    counts : ndarray, shape (npart, ny, nx)
+        Each partition's number of derotated frames with data at each pixel, n_p; npart partitions.
+    sig : sequence of float
+        Each partition's per-frame noise s_p.
+    mode : {"pixel", "coverage", "equal"}
+        The weights.
+
+    Returns
+    -------
+    ndarray, shape (npart, ny, nx)
+        The weights, 0 where a partition has no data.
+
+    Raises
+    ------
+    ValueError
+        If the mode is none of these.
+    """
+    c = np.asarray(counts, float)
+    if mode == "pixel":
+        w = c / np.asarray(sig, float)[:, None, None] ** 2
+    elif mode == "coverage":
+        nmax = c.reshape(c.shape[0], -1).max(axis=1)[:, None, None]
+        w = c / np.where(nmax > 0, nmax, 1.0)
+    elif mode == "equal":
+        w = np.ones_like(c)
+    else:
+        raise ValueError(f"unknown combination mode {mode!r}")
+    return np.where(c > 0, w, 0.0)
+
+
+def expected_noise(counts, sig, weights):
     """Return the combined image's expected noise at each pixel from the partitions' frame counts.
 
     Each partition p contributes an image of variance s_p**2 / n_p at a pixel where n_p of its
-    derotated frames have data. With per-pixel inverse-variance weights (`pixel_combine`) the
-    combined variance is ``1 / sum_p (n_p / s_p**2)``; with one equal weight per partition, as
-    KLIP-TPE's ``weighting="equal"`` combines them, it is ``sum_p (s_p**2 / n_p) / k**2`` over the
-    k partitions with data there.
+    derotated frames have data, and the weighted mean of the images has variance
+    ``sum_p w_p**2 s_p**2 / n_p / (sum_p w_p)**2``. With per-pixel inverse-variance weights
+    (`pixel_combine`) that is ``1 / sum_p (n_p / s_p**2)``; with one equal weight per partition, as
+    KLIP-TPE's ``weighting="equal"`` combines them, ``sum_p (s_p**2 / n_p) / k**2`` over the k
+    partitions with data there.
 
     Parameters
     ----------
@@ -751,24 +817,50 @@ def expected_noise(counts, sig, pixel_weights):
         Each partition's number of derotated frames with data at each pixel; npart partitions.
     sig : sequence of float
         Each partition's per-frame noise s_p.
-    pixel_weights : bool
-        Whether the image was combined with per-pixel inverse-variance weights.
+    weights : bool or {"pixel", "coverage", "equal"}
+        The combination's weights (`partition_weights`); True means "pixel" and False "equal".
 
     Returns
     -------
     ndarray, shape (ny, nx)
         The expected noise, NaN where no partition has data.
     """
+    mode = ("pixel" if weights else "equal") if isinstance(weights, (bool, np.bool_)) else str(weights)
     c = np.asarray(counts, float)
     s2 = np.asarray(sig, float)[:, None, None] ** 2
+    w = partition_weights(c, sig, mode)
     have = c > 0
-    k = have.sum(axis=0)
     with np.errstate(divide="ignore", invalid="ignore"):
-        if pixel_weights:
-            var = 1.0 / np.where(have, c / s2, 0.0).sum(axis=0)
-        else:
-            var = np.where(have, s2 / np.where(have, c, 1.0), 0.0).sum(axis=0) / k.astype(float) ** 2
-    return np.where(k > 0, np.sqrt(var), np.nan)
+        num = np.where(have, w ** 2 * s2 / np.where(have, c, 1.0), 0.0).sum(axis=0)
+        den = w.sum(axis=0) ** 2
+        var = num / den
+    return np.where(have.any(axis=0) & (den > 0), np.sqrt(var), np.nan)
+
+
+def recombine(stack, counts, sig, mode):
+    """Combine the partitions' images with a mode's per-pixel weights.
+
+    Parameters
+    ----------
+    stack : ndarray, shape (npart, ny, nx)
+        Each partition's image, NaN where it has no data.
+    counts : ndarray, shape (npart, ny, nx)
+        Each partition's number of derotated frames with data at each pixel.
+    sig : sequence of float
+        Each partition's per-frame noise s_p.
+    mode : {"pixel", "coverage", "equal"}
+        The weights (`partition_weights`).
+
+    Returns
+    -------
+    ndarray, shape (ny, nx)
+        The weighted mean of the images, NaN where no partition has data.
+    """
+    st = np.asarray(stack, float)
+    w = np.where(np.isfinite(st), partition_weights(counts, sig, mode), 0.0)
+    num = (np.where(w > 0, st, 0.0) * w).sum(axis=0)
+    den = w.sum(axis=0)
+    return np.where(den > 0, num / np.where(den > 0, den, 1.0), np.nan)
 
 
 def cmd_compare(a):
@@ -822,12 +914,12 @@ def cmd_compare(a):
         if os.path.exists(cpath):
             ch = fits.getheader(cpath)
             sig = [float(x) for x in ch["FRAMESIG"].split(",")]
-            pix = "pixel" in str(fits.getheader(os.path.join(a.out, f"{v}_clean.fits")).get("COMBINE", ""))
-            en = expected_noise(fits.getdata(cpath), sig, pix)
+            mode = combine_mode(fits.getheader(os.path.join(a.out, f"{v}_clean.fits")))
+            en = expected_noise(fits.getdata(cpath), sig, mode)
             rel = en / np.nanmedian(en[zone])
             rel = np.where(np.isfinite(rel), rel, 1.0)
-            lines.append(f"  {v}: counts of {src}, {'per-pixel' if pix else 'equal'} partition weights, expected "
-                         f"noise {np.nanmin(en[zone]):.3g}-{np.nanmax(en[zone]):.3g} over the zone")
+            lines.append(f"  {v}: counts of {src}, {'per-pixel' if mode == 'pixel' else mode} partition weights, "
+                         f"expected noise {np.nanmin(en[zone]):.3g}-{np.nanmax(en[zone]):.3g} over the zone")
         else:
             rel = relative_noise(img, cov, fwhm, a_in, a_out)
             lines.append(f"  {v}: no counts; relative_noise")
@@ -1042,8 +1134,8 @@ def noise_map_of(out, label, source):
     -------
     noise : ndarray, shape (ny, nx)
         `expected_noise`, NaN where no partition has data.
-    pixel_weights : bool
-        Whether the variant's partitions were combined with per-pixel weights.
+    mode : str
+        How the variant's partitions were combined (`combine_mode`).
 
     Raises
     ------
@@ -1054,8 +1146,8 @@ def noise_map_of(out, label, source):
     if not os.path.exists(cpath):
         raise SystemExit(f"{cpath} is missing: reduce {source} with --pixcomb, or pass --counts {label}:SOURCE")
     sig = [float(x) for x in fits.getheader(cpath)["FRAMESIG"].split(",")]
-    pix = "pixel" in str(fits.getheader(os.path.join(out, f"{label}_clean.fits")).get("COMBINE", ""))
-    return expected_noise(fits.getdata(cpath), sig, pix), pix
+    mode = combine_mode(fits.getheader(os.path.join(out, f"{label}_clean.fits")))
+    return expected_noise(fits.getdata(cpath), sig, mode), mode
 
 
 def sources_file(out, label, tag):
@@ -1209,7 +1301,8 @@ def cmd_sensitivity(a):
     Returns
     -------
     None
-        Writes ``sensitivity.txt``, ``sensitivity.csv`` and ``sensitivity.png`` into ``--out``.
+        Writes ``PREFIX.txt``, ``PREFIX.csv`` and ``PREFIX.png`` into ``--out``, PREFIX ``--prefix``
+        (default ``sensitivity``).
     """
     sys.path.insert(0, a.kt_src)
     from klip_tpe.metrics import gaussian_kernel
@@ -1234,7 +1327,7 @@ def cmd_sensitivity(a):
     for v in a.labels:
         clean = fits.getdata(os.path.join(a.out, f"{v}_clean.fits")).astype(float)
         clean[~zone] = np.nan
-        noise, _pix = noise_map_of(a.out, v, cmap.get(v, v))
+        noise, _mode = noise_map_of(a.out, v, cmap.get(v, v))
         res[v] = []
         for t in a.tags:
             inj = fits.getdata(os.path.join(a.out, f"{v}_{t}.fits")).astype(float)
@@ -1287,9 +1380,9 @@ def cmd_sensitivity(a):
         lines.append(f"  {gname:18s} n={len(sel):2d}: " + ", ".join(parts))
     text = "\n".join(lines)
     print(text)
-    with open(os.path.join(a.out, "sensitivity.txt"), "w") as f:
+    with open(os.path.join(a.out, f"{a.prefix}.txt"), "w") as f:
         f.write(text + "\n")
-    with open(os.path.join(a.out, "sensitivity.csv"), "w") as f:
+    with open(os.path.join(a.out, f"{a.prefix}.csv"), "w") as f:
         cols = ["label", "tag", "rho", "theta", "contrast", "x", "y", "cov", "support", "signal", "noise", "kappa",
                 "snr", "snr_real", "c5"]
         f.write(",".join(cols) + "\n")
@@ -1297,7 +1390,7 @@ def cmd_sensitivity(a):
             for q in res[v]:
                 f.write(",".join([v] + [str(q[c]) if isinstance(q[c], str) else f"{q[c]:.6g}" for c in cols[1:]])
                         + "\n")
-    plot_sensitivity(os.path.join(a.out, "sensitivity.png"), res, a.labels, ref, a.annulus,
+    plot_sensitivity(os.path.join(a.out, f"{a.prefix}.png"), res, a.labels, ref, a.annulus,
                      {**names, **dict(n.split(":", 1) for n in (a.names or []))}, a.legend_title)
 
 
@@ -1331,7 +1424,7 @@ def plot_sensitivity(path, res, labels, ref, annulus, names, legend_title=None):
     import matplotlib.pyplot as plt
     if len(labels) > len(SERIES):
         raise SystemExit(f"at most {len(SERIES)} labels in the figure")
-    fig, ax = plt.subplots(1, 2, figsize=(11.5, 4.6))
+    fig, ax = plt.subplots(1, 2, figsize=(11.5, 5.4))
     c_ref = np.array([q["c5"] for q in res[ref]])
     for j, v in enumerate(labels):
         col, mk = SERIES[j]
@@ -1355,12 +1448,56 @@ def plot_sensitivity(path, res, labels, ref, annulus, names, legend_title=None):
         for sp in axx.spines.values():
             sp.set_visible(True)
         axx.set_xlim(0, 1.02)
-    ax[0].legend(fontsize=8, frameon=True, loc="upper right", title=legend_title, title_fontsize=8)
-    ax[1].legend(fontsize=8, frameon=True, loc="upper right", title=legend_title, title_fontsize=8)
+    handles, names_ = ax[0].get_legend_handles_labels()
+    fig.legend(handles, names_, loc="lower center", ncol=min(len(labels), 3), fontsize=8.5, frameon=True,
+               title=legend_title, title_fontsize=8.5)
     fig.suptitle(f"Annulus {annulus} Winner: Injection-Recovery Sensitivity", fontsize=12)
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0.16, 1, 1))
     fig.savefig(path, dpi=110)
     plt.close(fig)
+
+
+def cmd_recombine(a):
+    """Combine a ``--pixcomb`` reduction's partition images with another mode's weights, without reducing.
+
+    For each pass of ``--tags``, ``SOURCE_TAG_stack.fits`` is combined with `recombine`, the counts
+    and per-frame noise of ``SOURCE_clean_counts.fits`` (the clean pass' noise for every pass, as
+    a run would weight its injected images like its clean one), and written as ``LABEL_TAG.fits``
+    with its ``COMBINE`` card; the clean pass also writes ``LABEL_clean_counts.fits`` and every
+    injected pass its sources' file, so the other steps read the new label as a reduction.
+
+    Parameters
+    ----------
+    a : argparse.Namespace
+        The parsed command line of the ``recombine`` step.
+
+    Returns
+    -------
+    None
+        Writes the files above into ``--out``, refusing to overwrite.
+    """
+    import shutil
+    card = {v: k for k, v in COMBINE_MODES.items()}[a.mode]
+    cpath = os.path.join(a.out, f"{a.source}_clean_counts.fits")
+    ch = fits.getheader(cpath)
+    counts = fits.getdata(cpath)
+    sig = [float(x) for x in ch["FRAMESIG"].split(",")]
+    for tag in a.tags:
+        spath = os.path.join(a.out, f"{a.source}_{tag}_stack.fits")
+        sh = fits.getheader(spath)
+        img = recombine(fits.getdata(spath), counts, sig, a.mode)
+        hdr = {k: sh[k] for k in ("ANNULUS", "WINNER", "PARTS", "INRAD", "OUTRAD") if k in sh}
+        write_image(os.path.join(a.out, f"{a.label}_{tag}.fits"), img,
+                    dict(hdr, VARIANT=str(sh.get("VARIANT", "")), LABEL=a.label, SOURCE=a.source, COMBINE=card))
+        if tag == "clean":
+            write_image(os.path.join(a.out, f"{a.label}_clean_counts.fits"), counts,
+                        dict(hdr, LABEL=a.label, SOURCE=a.source, FRAMESIG=ch["FRAMESIG"]))
+        else:
+            src, dst = sources_file(a.out, a.source, tag), sources_file(a.out, a.label, tag)
+            if os.path.exists(dst):
+                raise SystemExit(f"{dst} exists; not overwriting")
+            shutil.copyfile(src, dst)
+        print(f"{a.label} {tag}: {a.mode} weights from {a.source}, finite {np.isfinite(img).mean():.3f}")
 
 
 def cmd_figure(a):
@@ -1408,7 +1545,7 @@ def cmd_figure(a):
         srcs = json.load(open(sources_file(a.out, v, "inj")))
         ex = [source_xy(rho, th, pxs, (ny, nx)) for rho, th, _c in srcs]
         if noise_norm:
-            en, _pix = noise_map_of(a.out, v, cmap.get(v, v))
+            en, _mode = noise_map_of(a.out, v, cmap.get(v, v))
             rel = en / np.nanmedian(en[zone])
             rel = np.where(np.isfinite(rel), rel, 1.0)
             low = cov < float(a.min_cov)
@@ -1648,7 +1785,15 @@ def main(argv=None):
                    help="take LABEL's frame counts from SOURCE's *_clean_counts.fits")
     p.add_argument("--names", action="append", default=None, metavar="LABEL:NAME", help="legend name of a label")
     p.add_argument("--legend-title", default=None, help="title of the figure's legends")
+    p.add_argument("--prefix", default="sensitivity", help="name of the output files (default sensitivity)")
     p.set_defaults(func=cmd_sensitivity)
+    p = sub.add_parser("recombine", help="combine a --pixcomb reduction's partition images with other weights")
+    p.add_argument("--out", required=True, help="the folder of the reduce step")
+    p.add_argument("--source", required=True, help="label of a --pixcomb reduction (its stacks and counts)")
+    p.add_argument("--label", required=True, help="label of the new images")
+    p.add_argument("--mode", required=True, choices=("pixel", "coverage", "equal"), help="the weights")
+    p.add_argument("--tags", nargs="+", default=["clean", "inj"], help="passes to combine (default clean inj)")
+    p.set_defaults(func=cmd_recombine)
     p = sub.add_parser("figure", help="one variant before and another after")
     p.add_argument("--kt-src", required=True, help="directory holding the klip_tpe package")
     p.add_argument("--run-dir", required=True, help="the finished run")

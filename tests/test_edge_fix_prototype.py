@@ -87,6 +87,53 @@ def test_expected_noise_matches_simulation():
     assert eq.std() == pytest.approx(efp.expected_noise(c, s, False)[0, 0], rel=0.03)
 
 
+def test_partition_weights_modes():
+    """Inverse variance n/s^2, coverage n/N (1 at full coverage), equal 1; 0 without data; bad modes raise."""
+    counts = np.zeros((2, 1, 3))
+    counts[:, 0, 0] = [4, 18]
+    counts[:, 0, 1] = [2, 9]
+    sig = [2.0, 3.0]
+    assert np.allclose(efp.partition_weights(counts, sig, "pixel")[:, 0, :2], [[1.0, 0.5], [2.0, 1.0]])
+    assert np.allclose(efp.partition_weights(counts, sig, "coverage")[:, 0, :2], [[1.0, 0.5], [1.0, 0.5]])
+    assert np.allclose(efp.partition_weights(counts, sig, "equal")[:, 0, :2], 1.0)
+    assert np.all(efp.partition_weights(counts, sig, "coverage")[:, 0, 2] == 0)
+    with pytest.raises(ValueError):
+        efp.partition_weights(counts, sig, "nope")
+
+
+def test_expected_noise_coverage_matches_simulation():
+    """The coverage-weighted mean of partitions' frame averages scatters as expected_noise says."""
+    rng = np.random.default_rng(10)
+    n = np.array([5, 20, 2])
+    nmax = np.array([10, 20, 8])
+    s = np.array([1.0, 2.0, 0.5])
+    trials = 20000
+    parts = np.stack([rng.normal(0.0, s[p], (trials, n[p])).mean(axis=1) for p in range(3)])
+    w = n / nmax
+    est = (parts * w[:, None]).sum(axis=0) / w.sum()
+    c = np.zeros((3, 1, 2))
+    c[:, 0, 0] = n
+    c[:, 0, 1] = nmax                      # sets each partition's largest count N_p
+    assert est.std() == pytest.approx(efp.expected_noise(c, s, "coverage")[0, 0], rel=0.03)
+
+
+def test_recombine_and_combine_mode():
+    """Equal weights give the NaN-aware mean, inverse variance the weighted mean; the card names the mode."""
+    rng = np.random.default_rng(11)
+    st = rng.normal(size=(3, 4, 4))
+    st[0, 0, :] = np.nan
+    counts = np.full((3, 4, 4), 6.0)
+    counts[0, 0, :] = 0
+    sig = [1.0, 2.0, 0.5]
+    assert np.allclose(efp.recombine(st, counts, sig, "equal"), np.nanmean(st, axis=0))
+    w = 6.0 / np.array(sig) ** 2
+    manual = (st[1:, 0, 0] * w[1:]).sum() / w[1:].sum()
+    assert efp.recombine(st, counts, sig, "pixel")[0, 0] == pytest.approx(manual)
+    assert efp.combine_mode({"COMBINE": "pixel inverse variance"}) == "pixel"
+    assert efp.combine_mode({"COMBINE": "pixel coverage"}) == "coverage"
+    assert efp.combine_mode({}) == "equal"
+
+
 def test_robust_sigma_and_minimum():
     """The MAD sigma of Gaussian values is near 1; too few values give NaN."""
     v = np.random.default_rng(4).normal(size=40000)

@@ -68,6 +68,16 @@ for rot in 20 40; do
     done
 done
 
+# the saved partition images combined with coverage weights (n_p / N_p, equal where every frame has data)
+for pair in base_cov:base_pix mkn_cov:mkn_pix; do
+    if [ -e "${OUT:?}/${pair%%:*}_clean.fits" ]; then
+        echo "skip ${pair%%:*}: ${pair%%:*}_clean.fits exists"
+        continue
+    fi
+    python3 "${PROTO:?}" recombine --out "${OUT:?}" --source "${pair#*:}" --label "${pair%%:*}" --mode coverage \
+        --tags clean inj inj_r20 inj_r40
+done
+
 # each step of one partition's reduction against the distance to the detector's edge
 for v in base hpmask_klip; do
     for pp in P3_left_B:P3_left_B P4_left_A:P4A P4_left_B:P4_left_B; do
@@ -89,5 +99,9 @@ python3 "${PROTO:?}" sensitivity "${common[@]}" --out "${OUT:?}" \
     --names "base:KLIP-TPE As Is" --names "base_pix:Pixel Weights" --names "nv_pix:+ NaN Variance" \
     --names "mkn_pix:+ Masked KLIP (Recommended)" --names "hkn_pix:+ High-Pass Edge Mask" \
     --legend-title "Each Adds to the One Above"
+python3 "${PROTO:?}" sensitivity "${common[@]}" --out "${OUT:?}" --prefix sensitivity_weights \
+    --labels base base_pix base_cov mkn_pix mkn_cov --tags inj inj_r20 inj_r40 --counts base:base_pix \
+    --names "base:KLIP-TPE As Is" --names "base_pix:Inverse-Variance Weights" --names "base_cov:Coverage Weights" \
+    --names "mkn_pix:Masked KLIP + NaN Var., Inverse-Variance" --names "mkn_cov:Masked KLIP + NaN Var., Coverage"
 python3 "${PROTO:?}" figure "${common[@]}" --out "${OUT:?}" --before base --after mkn_pix \
     --before-title "Before: KLIP-TPE As Is" --after-title "After: Masked KLIP, NaN Variance, Pixel Weights"
